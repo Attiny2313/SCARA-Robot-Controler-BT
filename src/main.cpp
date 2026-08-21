@@ -113,9 +113,19 @@ constexpr float Z_JOG_SPEED_MM_S    = 15.0f;
 // Tryb TOOL:
 constexpr float TOOL_XY_SPEED_MM_S  = 60.0f;
 
-// Serwa:
-constexpr float TOOL_ROTATE_SPEED_DEG_S = 70.0f;
-constexpr float GRIP_SPEED_DEG_S        = 90.0f;
+// Serwa - maksymalna prędkość zadawania pozycji:
+constexpr float TOOL_ROTATE_SPEED_DEG_S = 35.0f;
+constexpr float GRIP_SPEED_DEG_S        = 45.0f;
+
+// Zakres impulsów serw. W razie potrzeby skalibruj osobno każde serwo.
+constexpr int SERVO_ROTATE_MIN_US = 500;
+constexpr int SERVO_ROTATE_MAX_US = 2500;
+constexpr int SERVO_GRIP_MIN_US   = 500;
+constexpr int SERVO_GRIP_MAX_US   = 2500;
+
+// Wygładzanie pozycji. 0 = brak ruchu, 1 = natychmiastowa zmiana.
+// Dla okresu 20 ms wartości 0.15-0.30 zwykle dają płynny ruch.
+constexpr float SERVO_FILTER_ALPHA = 0.20f;
 
 // Maksymalne częstotliwości STEP:
 constexpr uint32_t ARM1_MAX_STEP_HZ = 10000;
@@ -132,8 +142,9 @@ constexpr uint32_t Z_ACCEL    = 15000;
 // ============================================================
 
 constexpr uint32_t CONTROL_PERIOD_MS = 10;
+constexpr uint32_t SERVO_PERIOD_MS = 20;
 constexpr uint32_t GAMEPAD_TIMEOUT_MS = 500;
-constexpr int16_t JOYSTICK_DEADZONE = 60;
+constexpr int16_t JOYSTICK_DEADZONE = 90;
 
 // ============================================================
 // STRUKTURY
@@ -191,7 +202,11 @@ RobotState robot;
 // ============================================================
 
 uint32_t lastControlMs = 0;
+uint32_t lastServoUpdateMs = 0;
 uint32_t lastGamepadPacketMs = 0;
+
+float servoRotateFilteredDeg = HOME_TOOL_ROTATE_DEG;
+float servoGripFilteredDeg = HOME_GRIP_DEG;
 
 bool previousModeButton = HIGH;
 bool previousTeachButton = HIGH;
@@ -390,7 +405,7 @@ void updateEmergencyStop() {
     // przez zewnętrzny rezystor pull-up.
     const bool estopActive = digitalRead(PIN_ESTOP) == HIGH;
 
-    if (estopActive && !robot.estopLatched) {
+    if (estopActive && !robot.estopLatched) {     
         robot.estopLatched = true;
 
         emergencyStopMotion();
@@ -529,7 +544,6 @@ ControllerPtr getActiveController() {
     for (ControllerPtr controller : controllers) {
         if (controller != nullptr &&
             controller->isConnected() &&
-            controller->hasData() &&
             controller->isGamepad()) {
             return controller;
         }
@@ -542,7 +556,23 @@ ControllerPtr getActiveController() {
 // SERWA
 // ============================================================
 
-void updateServos(
+int angleToPulseUs(
+    float angleDeg,
+    float minimumDeg,
+    float maximumDeg,
+    int minimumUs,
+    int maximumUs
+) {
+    const float angle = clampFloat(angleDeg, minimumDeg, maximumDeg);
+    const float normalized =
+        (angle - minimumDeg) / (maximumDeg - minimumDeg);
+
+    return lroundf(
+        minimumUs + normalized * (maximumUs - minimumUs)
+    );
+}
+
+void updateServoTargets(
     float rotateCommand,
     float gripCommand,
     float deltaTimeSeconds
@@ -568,14 +598,43 @@ void updateServos(
         GRIP_MIN_DEG,
         GRIP_MAX_DEG
     );
+}
 
-    servoRotate.write(
-        static_cast<int>(robot.toolRotateDeg)
+void refreshServos() {
+    const uint32_t now = millis();
+
+    if (now - lastServoUpdateMs < SERVO_PERIOD_MS) {
+        return;
+    }
+
+    lastServoUpdateMs = now;
+
+    servoRotateFilteredDeg +=
+        (robot.toolRotateDeg - servoRotateFilteredDeg) *
+        SERVO_FILTER_ALPHA;
+
+    servoGripFilteredDeg +=
+        (robot.gripperDeg - servoGripFilteredDeg) *
+        SERVO_FILTER_ALPHA;
+
+    const int rotatePulseUs = angleToPulseUs(
+        servoRotateFilteredDeg,
+        TOOL_ROTATE_MIN_DEG,
+        TOOL_ROTATE_MAX_DEG,
+        SERVO_ROTATE_MIN_US,
+        SERVO_ROTATE_MAX_US
     );
 
-    servoGrip.write(
-        static_cast<int>(robot.gripperDeg)
+    const int gripPulseUs = angleToPulseUs(
+        servoGripFilteredDeg,
+        GRIP_MIN_DEG,
+        GRIP_MAX_DEG,
+        SERVO_GRIP_MIN_US,
+        SERVO_GRIP_MAX_US
     );
+
+    servoRotate.writeMicroseconds(rotatePulseUs);
+    servoGrip.writeMicroseconds(gripPulseUs);
 }
 
 // ============================================================
@@ -672,7 +731,14 @@ void processGamepad(float deltaTimeSeconds) {
         return;
     }
 
-    lastGamepadPacketMs = millis();
+    // hasData() oznacza tylko, że właśnie dotarł nowy raport z pada.
+    // Nie wolno od niego uzależniać wykonywania ruchu, bo raporty Bluetooth
+    // przychodzą rzadziej i nierównomiernie niż pętla sterowania.
+    // Ostatnie wartości osi są przechowywane przez Bluepad32 i mogą być
+    // wykorzystywane w każdym cyklu sterowania.
+    if (controller->hasData()) {
+        lastGamepadPacketMs = millis();
+    }
 
     const float leftX =
         normalizeJoystick(controller->axisX());
@@ -705,7 +771,7 @@ void processGamepad(float deltaTimeSeconds) {
         gripCommand = -1.0f;
     }
 
-    updateServos(
+    updateServoTargets(
         rightX,
         gripCommand,
         deltaTimeSeconds
@@ -832,22 +898,37 @@ void setup() {
 
     servoRotate.attach(
         PIN_SERVO_ROTATE,
-        500,
-        2500
+        SERVO_ROTATE_MIN_US,
+        SERVO_ROTATE_MAX_US
     );
 
     servoGrip.attach(
         PIN_SERVO_GRIP,
-        500,
-        2500
+        SERVO_GRIP_MIN_US,
+        SERVO_GRIP_MAX_US
     );
 
-    servoRotate.write(
-        static_cast<int>(robot.toolRotateDeg)
+    servoRotateFilteredDeg = robot.toolRotateDeg;
+    servoGripFilteredDeg = robot.gripperDeg;
+
+    servoRotate.writeMicroseconds(
+        angleToPulseUs(
+            servoRotateFilteredDeg,
+            TOOL_ROTATE_MIN_DEG,
+            TOOL_ROTATE_MAX_DEG,
+            SERVO_ROTATE_MIN_US,
+            SERVO_ROTATE_MAX_US
+        )
     );
 
-    servoGrip.write(
-        static_cast<int>(robot.gripperDeg)
+    servoGrip.writeMicroseconds(
+        angleToPulseUs(
+            servoGripFilteredDeg,
+            GRIP_MIN_DEG,
+            GRIP_MAX_DEG,
+            SERVO_GRIP_MIN_US,
+            SERVO_GRIP_MAX_US
+        )
     );
 
     if (!initializeSteppers()) {
@@ -878,7 +959,7 @@ void setup() {
 }
 
 
-// ============================================================
+//  
 // LOOP
 // ============================================================
 
@@ -887,6 +968,7 @@ void loop() {
 
     updateEmergencyStop();
     updatePanelButtons();
+    refreshServos();
 
     const uint32_t now = millis();
 
