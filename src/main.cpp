@@ -2,6 +2,7 @@
 #include <Bluepad32.h>
 #include <FastAccelStepper.h>
 #include <ESP32Servo.h>
+#include <Preferences.h>
 
 // ============================================================
 // PINY
@@ -24,7 +25,7 @@ constexpr uint8_t PIN_BUTTON_TEACH = 25;
 constexpr uint8_t PIN_BUTTON_MODE  = 33;
 constexpr uint8_t PIN_ESTOP        = 39;
 
-// Przewidziane na później:
+// Zostawione sprzętowo na przyszłość. Homing w tym projekcie jest ręczny.
 constexpr uint8_t PIN_ENDSTOP_Z    = 34;
 constexpr uint8_t PIN_ENDSTOP_ARM1 = 35;
 constexpr uint8_t PIN_ENDSTOP_ARM2 = 36;
@@ -55,10 +56,10 @@ constexpr float STEPS_PER_MM_Z =
     MOTOR_STEPS_REV * MICROSTEPS * GEAR_Z / Z_SCREW_LEAD_MM;
 
 // ============================================================
-// POZYCJA DOMOWA PO WŁĄCZENIU
+// RĘCZNY HOME
 // ============================================================
-// UWAGA: do czasu dodania prawdziwego homingu program zakłada, że robot
-// fizycznie znajduje się w tej pozycji podczas startu.
+// Przed włączeniem/resetem robot musi zostać ręcznie ustawiony w HOME.
+// Program przyjmuje poniższe współrzędne jako aktualną pozycję po starcie.
 constexpr float HOME_ARM1_DEG = 115.0f;
 constexpr float HOME_ARM2_DEG = -147.0f;
 constexpr float HOME_Z_MM     = 0.0f;
@@ -83,9 +84,11 @@ constexpr float GRIP_MAX_DEG = 95.0f;
 // PRĘDKOŚCI
 // ============================================================
 constexpr float ARM_JOG_SPEED_DEG_S = 25.0f;
-// Oś Z była zbyt szybka; 5 mm/s daje 8000 STEP/s przy obecnej mechanice.
 constexpr float Z_JOG_SPEED_MM_S    = 5.0f;
 constexpr float TOOL_XY_SPEED_MM_S  = 60.0f;
+
+constexpr float AUTO_ARM_SPEED_DEG_S = 20.0f;
+constexpr float AUTO_Z_SPEED_MM_S    = 5.0f;
 
 constexpr float TOOL_ROTATE_SPEED_DEG_S = 35.0f;
 constexpr float GRIP_SPEED_DEG_S        = 45.0f;
@@ -105,15 +108,19 @@ constexpr uint32_t ARM2_ACCEL = 12000;
 constexpr uint32_t Z_ACCEL    = 12000;
 
 // ============================================================
-// CZASY I WEJŚCIA
+// CZASY / AUTO
 // ============================================================
 constexpr uint32_t CONTROL_PERIOD_MS = 10;
 constexpr uint32_t SERVO_PERIOD_MS = 20;
 constexpr uint32_t GAMEPAD_TIMEOUT_MS = 500;
 constexpr uint32_t GAMEPAD_ARM_NEUTRAL_MS = 300;
 constexpr uint32_t BUTTON_DEBOUNCE_MS = 40;
+constexpr uint32_t TEACH_LONG_PRESS_MS = 1800;
+constexpr uint32_t DEFAULT_POINT_DWELL_MS = 400;
 constexpr int16_t JOYSTICK_DEADZONE = 90;
 constexpr float MAX_CONTROL_DT_S = 0.05f;
+constexpr uint8_t MAX_PROGRAM_POINTS = 20;
+constexpr bool AUTO_LOOP_PROGRAM = true;
 
 // ============================================================
 // STRUKTURY
@@ -121,6 +128,20 @@ constexpr float MAX_CONTROL_DT_S = 0.05f;
 enum class ControlMode : uint8_t {
     JOINT,
     TOOL
+};
+
+enum class OperatingMode : uint8_t {
+    MANUAL,
+    AUTO
+};
+
+enum class AutoState : uint8_t {
+    IDLE,
+    MOVE,
+    DWELL,
+    PAUSED,
+    FINISHED,
+    FAULT
 };
 
 struct JointPosition {
@@ -135,16 +156,25 @@ struct CartesianPosition {
     float zMm;
 };
 
-struct RobotState {
-    // Pozycja zadana i pozycja wynikająca z liczników krokowców są rozdzielone.
+struct ProgramPoint {
     JointPosition joints;
-    JointPosition actualJoints;
+    float toolRotateDeg;
+    float gripperDeg;
+    uint32_t dwellMs;
+};
+
+struct RobotState {
+    JointPosition joints;       // pozycja zadana
+    JointPosition actualJoints; // pozycja z liczników kroków
     CartesianPosition tcp;
     CartesianPosition actualTcp;
 
     float toolRotateDeg;
     float gripperDeg;
-    ControlMode mode;
+
+    ControlMode controlMode;
+    OperatingMode operatingMode;
+    AutoState autoState;
 
     bool estopLatched;
     bool controllerConnected;
@@ -152,7 +182,7 @@ struct RobotState {
 };
 
 // ============================================================
-// OBIEKTY
+// OBIEKTY / STAN
 // ============================================================
 FastAccelStepperEngine stepperEngine;
 FastAccelStepper* stepperArm1 = nullptr;
@@ -161,18 +191,23 @@ FastAccelStepper* stepperZ    = nullptr;
 
 Servo servoRotate;
 Servo servoGrip;
+Preferences preferences;
 ControllerPtr controllers[BP32_MAX_GAMEPADS];
 RobotState robot;
 
-// ============================================================
-// ZMIENNE CZASOWE / STAN WEJŚĆ
-// ============================================================
+ProgramPoint programPoints[MAX_PROGRAM_POINTS];
+uint8_t programPointCount = 0;
+uint8_t currentProgramPoint = 0;
+bool autoMotionStarted = false;
+uint32_t autoDwellStartedMs = 0;
+
 uint32_t lastControlMs = 0;
 uint32_t lastServoUpdateMs = 0;
 uint32_t lastGamepadPacketMs = 0;
 uint32_t gamepadNeutralSinceMs = 0;
 uint32_t lastModeButtonEdgeMs = 0;
 uint32_t lastTeachButtonEdgeMs = 0;
+uint32_t teachPressStartedMs = 0;
 
 float servoRotateFilteredDeg = HOME_TOOL_ROTATE_DEG;
 float servoGripFilteredDeg = HOME_GRIP_DEG;
@@ -182,7 +217,7 @@ bool previousTeachButton = HIGH;
 bool previousPadStart = false;
 
 // ============================================================
-// FUNKCJE POMOCNICZE
+// POMOCNICZE
 // ============================================================
 float clampFloat(float value, float minimum, float maximum) {
     if (value < minimum) return minimum;
@@ -205,13 +240,9 @@ float radToDeg(float radians) {
 }
 
 float normalizeJoystick(int32_t value) {
-    if (abs(value) < JOYSTICK_DEADZONE) {
-        return 0.0f;
-    }
-
+    if (abs(value) < JOYSTICK_DEADZONE) return 0.0f;
     constexpr float maximumAxisValue = 512.0f;
-    float normalized = static_cast<float>(value) / maximumAxisValue;
-    return clampFloat(normalized, -1.0f, 1.0f);
+    return clampFloat(static_cast<float>(value) / maximumAxisValue, -1.0f, 1.0f);
 }
 
 int32_t arm1DegreesToSteps(float angleDeg) {
@@ -246,85 +277,81 @@ CartesianPosition forwardKinematics(const JointPosition& joints) {
     const float theta2 = degToRad(joints.arm2Deg);
 
     CartesianPosition result;
-    result.xMm =
-        ARM_LENGTH_1_MM * cosf(theta1) +
-        ARM_LENGTH_2_MM * cosf(theta1 + theta2);
-    result.yMm =
-        ARM_LENGTH_1_MM * sinf(theta1) +
-        ARM_LENGTH_2_MM * sinf(theta1 + theta2);
+    result.xMm = ARM_LENGTH_1_MM * cosf(theta1) +
+                 ARM_LENGTH_2_MM * cosf(theta1 + theta2);
+    result.yMm = ARM_LENGTH_1_MM * sinf(theta1) +
+                 ARM_LENGTH_2_MM * sinf(theta1 + theta2);
     result.zMm = joints.zMm;
     return result;
 }
 
-bool inverseKinematics(
-    float xMm,
-    float yMm,
-    bool elbowUp,
-    JointPosition& result
-) {
+bool inverseKinematics(float xMm, float yMm, bool elbowUp, JointPosition& result) {
     const float radiusSquared = xMm * xMm + yMm * yMm;
     float cosTheta2 =
         (radiusSquared - ARM_LENGTH_1_MM * ARM_LENGTH_1_MM -
          ARM_LENGTH_2_MM * ARM_LENGTH_2_MM) /
         (2.0f * ARM_LENGTH_1_MM * ARM_LENGTH_2_MM);
 
-    if (cosTheta2 < -1.0f || cosTheta2 > 1.0f) {
-        return false;
-    }
+    if (cosTheta2 < -1.0f || cosTheta2 > 1.0f) return false;
 
     cosTheta2 = clampFloat(cosTheta2, -1.0f, 1.0f);
     float sinTheta2 = sqrtf(1.0f - cosTheta2 * cosTheta2);
     if (!elbowUp) sinTheta2 = -sinTheta2;
 
     const float theta2 = atan2f(sinTheta2, cosTheta2);
-    const float theta1 =
-        atan2f(yMm, xMm) -
-        atan2f(
-            ARM_LENGTH_2_MM * sinTheta2,
-            ARM_LENGTH_1_MM + ARM_LENGTH_2_MM * cosTheta2
-        );
+    const float theta1 = atan2f(yMm, xMm) -
+        atan2f(ARM_LENGTH_2_MM * sinTheta2,
+               ARM_LENGTH_1_MM + ARM_LENGTH_2_MM * cosTheta2);
 
     result.arm1Deg = radToDeg(theta1);
     result.arm2Deg = radToDeg(theta2);
     result.zMm = robot.joints.zMm;
 
-    return !(
-        result.arm1Deg < ARM1_MIN_DEG || result.arm1Deg > ARM1_MAX_DEG ||
-        result.arm2Deg < ARM2_MIN_DEG || result.arm2Deg > ARM2_MAX_DEG
-    );
+    return !(result.arm1Deg < ARM1_MIN_DEG || result.arm1Deg > ARM1_MAX_DEG ||
+             result.arm2Deg < ARM2_MIN_DEG || result.arm2Deg > ARM2_MAX_DEG);
 }
 
 // ============================================================
-// RUCH I POZYCJA
+// POZYCJA / RUCH
 // ============================================================
 void updateActualRobotPosition() {
-    if (stepperArm1 == nullptr || stepperArm2 == nullptr || stepperZ == nullptr) {
-        return;
-    }
+    if (stepperArm1 == nullptr || stepperArm2 == nullptr || stepperZ == nullptr) return;
 
-    robot.actualJoints.arm1Deg =
-        arm1StepsToDegrees(stepperArm1->getCurrentPosition());
-    robot.actualJoints.arm2Deg =
-        arm2StepsToDegrees(stepperArm2->getCurrentPosition());
-    robot.actualJoints.zMm =
-        zStepsToMillimeters(stepperZ->getCurrentPosition());
+    robot.actualJoints.arm1Deg = arm1StepsToDegrees(stepperArm1->getCurrentPosition());
+    robot.actualJoints.arm2Deg = arm2StepsToDegrees(stepperArm2->getCurrentPosition());
+    robot.actualJoints.zMm = zStepsToMillimeters(stepperZ->getCurrentPosition());
     robot.actualTcp = forwardKinematics(robot.actualJoints);
 }
 
-void commandJointPosition(const JointPosition& target, float deltaTimeSeconds) {
-    if (robot.estopLatched || !robot.gamepadArmed) {
-        return;
-    }
+bool axesRunning() {
+    if (stepperArm1 == nullptr || stepperArm2 == nullptr || stepperZ == nullptr) return false;
+    return stepperArm1->isRunning() || stepperArm2->isRunning() || stepperZ->isRunning();
+}
 
-    const JointPosition clamped = {
+bool motionFinished() {
+    return !axesRunning();
+}
+
+JointPosition clampJointPosition(const JointPosition& target) {
+    return {
         clampFloat(target.arm1Deg, ARM1_MIN_DEG, ARM1_MAX_DEG),
         clampFloat(target.arm2Deg, ARM2_MIN_DEG, ARM2_MAX_DEG),
         clampFloat(target.zMm, Z_MIN_MM, Z_MAX_MM)
     };
+}
 
-    // Dopasuj maksymalną częstotliwość STEP do szybkości przesuwania celu.
-    // Dzięki temu moveTo() nie próbuje za każdym razem doganiać małego celu
-    // z pełną prędkością osi.
+void emergencyStopMotion() {
+    if (stepperArm1 != nullptr) stepperArm1->forceStop();
+    if (stepperArm2 != nullptr) stepperArm2->forceStop();
+    if (stepperZ != nullptr) stepperZ->forceStop();
+}
+
+void commandManualJointPosition(const JointPosition& target, float deltaTimeSeconds) {
+    if (robot.estopLatched || !robot.gamepadArmed ||
+        robot.operatingMode != OperatingMode::MANUAL) return;
+
+    const JointPosition clamped = clampJointPosition(target);
+
     if (deltaTimeSeconds > 0.0f) {
         const float arm1Delta = fabsf(clamped.arm1Deg - robot.joints.arm1Deg);
         const float arm2Delta = fabsf(clamped.arm2Deg - robot.joints.arm2Deg);
@@ -332,21 +359,15 @@ void commandJointPosition(const JointPosition& target, float deltaTimeSeconds) {
 
         if (arm1Delta > 0.0001f) {
             stepperArm1->setSpeedInHz(clampStepHz(
-                arm1Delta / deltaTimeSeconds * STEPS_PER_DEG_ARM1,
-                ARM1_MAX_STEP_HZ
-            ));
+                arm1Delta / deltaTimeSeconds * STEPS_PER_DEG_ARM1, ARM1_MAX_STEP_HZ));
         }
         if (arm2Delta > 0.0001f) {
             stepperArm2->setSpeedInHz(clampStepHz(
-                arm2Delta / deltaTimeSeconds * STEPS_PER_DEG_ARM2,
-                ARM2_MAX_STEP_HZ
-            ));
+                arm2Delta / deltaTimeSeconds * STEPS_PER_DEG_ARM2, ARM2_MAX_STEP_HZ));
         }
         if (zDelta > 0.0001f) {
             stepperZ->setSpeedInHz(clampStepHz(
-                zDelta / deltaTimeSeconds * STEPS_PER_MM_Z,
-                Z_MAX_STEP_HZ
-            ));
+                zDelta / deltaTimeSeconds * STEPS_PER_MM_Z, Z_MAX_STEP_HZ));
         }
     }
 
@@ -358,23 +379,235 @@ void commandJointPosition(const JointPosition& target, float deltaTimeSeconds) {
     robot.tcp = forwardKinematics(robot.joints);
 }
 
-void emergencyStopMotion() {
-    if (stepperArm1 != nullptr) stepperArm1->forceStop();
-    if (stepperArm2 != nullptr) stepperArm2->forceStop();
-    if (stepperZ != nullptr) stepperZ->forceStop();
-}
+void commandAutoJointPosition(const JointPosition& target) {
+    if (robot.estopLatched || robot.operatingMode != OperatingMode::AUTO) return;
 
-void disarmGamepad(const char* reason) {
-    if (robot.gamepadArmed) {
-        emergencyStopMotion();
+    updateActualRobotPosition();
+    const JointPosition clamped = clampJointPosition(target);
+
+    const float d1 = fabsf(clamped.arm1Deg - robot.actualJoints.arm1Deg);
+    const float d2 = fabsf(clamped.arm2Deg - robot.actualJoints.arm2Deg);
+    const float dz = fabsf(clamped.zMm - robot.actualJoints.zMm);
+
+    const float t1 = d1 / AUTO_ARM_SPEED_DEG_S;
+    const float t2 = d2 / AUTO_ARM_SPEED_DEG_S;
+    const float tz = dz / AUTO_Z_SPEED_MM_S;
+    const float moveTime = fmaxf(0.01f, fmaxf(t1, fmaxf(t2, tz)));
+
+    if (d1 > 0.001f) {
+        stepperArm1->setSpeedInHz(clampStepHz(
+            d1 / moveTime * STEPS_PER_DEG_ARM1, ARM1_MAX_STEP_HZ));
+    }
+    if (d2 > 0.001f) {
+        stepperArm2->setSpeedInHz(clampStepHz(
+            d2 / moveTime * STEPS_PER_DEG_ARM2, ARM2_MAX_STEP_HZ));
+    }
+    if (dz > 0.001f) {
+        stepperZ->setSpeedInHz(clampStepHz(
+            dz / moveTime * STEPS_PER_MM_Z, Z_MAX_STEP_HZ));
     }
 
-    robot.gamepadArmed = false;
-    gamepadNeutralSinceMs = 0;
-    previousPadStart = false;
+    stepperArm1->moveTo(arm1DegreesToSteps(clamped.arm1Deg));
+    stepperArm2->moveTo(arm2DegreesToSteps(clamped.arm2Deg));
+    stepperZ->moveTo(zMillimetersToSteps(clamped.zMm));
 
-    if (reason != nullptr) {
-        Serial.println(reason);
+    robot.joints = clamped;
+    robot.tcp = forwardKinematics(robot.joints);
+}
+
+// ============================================================
+// PROGRAM TEACH / NVS
+// ============================================================
+void saveProgram() {
+    preferences.putUChar("count", programPointCount);
+    if (programPointCount > 0) {
+        preferences.putBytes("points", programPoints,
+                             sizeof(ProgramPoint) * programPointCount);
+    } else {
+        preferences.remove("points");
+    }
+}
+
+void loadProgram() {
+    programPointCount = preferences.getUChar("count", 0);
+    if (programPointCount > MAX_PROGRAM_POINTS) {
+        programPointCount = 0;
+        saveProgram();
+        return;
+    }
+
+    if (programPointCount > 0) {
+        const size_t expected = sizeof(ProgramPoint) * programPointCount;
+        if (preferences.getBytesLength("points") != expected ||
+            preferences.getBytes("points", programPoints, expected) != expected) {
+            programPointCount = 0;
+            saveProgram();
+        }
+    }
+}
+
+void clearProgram() {
+    if (robot.operatingMode != OperatingMode::MANUAL || axesRunning()) return;
+    programPointCount = 0;
+    currentProgramPoint = 0;
+    saveProgram();
+    Serial.println("TEACH: program wyczyszczony");
+}
+
+void teachCurrentPoint() {
+    if (robot.estopLatched || robot.operatingMode != OperatingMode::MANUAL) return;
+    if (axesRunning()) {
+        Serial.println("TEACH: zatrzymaj osie przed zapisaniem punktu");
+        return;
+    }
+    if (programPointCount >= MAX_PROGRAM_POINTS) {
+        Serial.println("TEACH: brak miejsca na kolejny punkt");
+        return;
+    }
+
+    updateActualRobotPosition();
+    ProgramPoint& p = programPoints[programPointCount];
+    p.joints = robot.actualJoints;
+    p.toolRotateDeg = robot.toolRotateDeg;
+    p.gripperDeg = robot.gripperDeg;
+    p.dwellMs = DEFAULT_POINT_DWELL_MS;
+
+    programPointCount++;
+    saveProgram();
+
+    Serial.printf("TEACH: zapisano P%02u  A1=%.2f A2=%.2f Z=%.2f ROT=%.1f GRIP=%.1f\n",
+                  programPointCount,
+                  p.joints.arm1Deg, p.joints.arm2Deg, p.joints.zMm,
+                  p.toolRotateDeg, p.gripperDeg);
+}
+
+// ============================================================
+// AUTO
+// ============================================================
+void setAutoFault(const char* reason) {
+    emergencyStopMotion();
+    robot.autoState = AutoState::FAULT;
+    autoMotionStarted = false;
+    digitalWrite(PIN_LED_ERROR, HIGH);
+    if (reason != nullptr) Serial.println(reason);
+}
+
+void pauseAuto(const char* reason) {
+    if (robot.operatingMode != OperatingMode::AUTO) return;
+    if (robot.autoState == AutoState::IDLE ||
+        robot.autoState == AutoState::FINISHED ||
+        robot.autoState == AutoState::FAULT) return;
+
+    emergencyStopMotion();
+    updateActualRobotPosition();
+    robot.joints = robot.actualJoints;
+    robot.tcp = robot.actualTcp;
+    robot.autoState = AutoState::PAUSED;
+    autoMotionStarted = false;
+    if (reason != nullptr) Serial.println(reason);
+}
+
+void startAuto() {
+    if (robot.estopLatched || robot.operatingMode != OperatingMode::AUTO) return;
+    if (programPointCount == 0) {
+        Serial.println("AUTO: brak zapisanych punktów");
+        return;
+    }
+
+    currentProgramPoint = 0;
+    autoMotionStarted = false;
+    robot.autoState = AutoState::MOVE;
+    digitalWrite(PIN_LED_ERROR, LOW);
+    Serial.printf("AUTO START: %u punktów\n", programPointCount);
+}
+
+void toggleAutoRunPause() {
+    if (robot.operatingMode != OperatingMode::AUTO || robot.estopLatched) return;
+
+    switch (robot.autoState) {
+        case AutoState::IDLE:
+        case AutoState::FINISHED:
+            startAuto();
+            break;
+
+        case AutoState::MOVE:
+        case AutoState::DWELL:
+            pauseAuto("AUTO PAUSE");
+            break;
+
+        case AutoState::PAUSED:
+            robot.autoState = AutoState::MOVE;
+            autoMotionStarted = false;
+            Serial.printf("AUTO RESUME: P%02u\n", currentProgramPoint + 1);
+            break;
+
+        case AutoState::FAULT:
+            Serial.println("AUTO: FAULT - wymagany restart po E-STOP");
+            break;
+    }
+}
+
+void startCurrentProgramPoint() {
+    if (currentProgramPoint >= programPointCount) {
+        setAutoFault("AUTO: błędny indeks punktu");
+        return;
+    }
+
+    const ProgramPoint& p = programPoints[currentProgramPoint];
+    robot.toolRotateDeg = clampFloat(p.toolRotateDeg,
+                                    TOOL_ROTATE_MIN_DEG, TOOL_ROTATE_MAX_DEG);
+    robot.gripperDeg = clampFloat(p.gripperDeg,
+                                 GRIP_MIN_DEG, GRIP_MAX_DEG);
+    commandAutoJointPosition(p.joints);
+    autoMotionStarted = true;
+
+    Serial.printf("AUTO -> P%02u/%02u\n",
+                  currentProgramPoint + 1, programPointCount);
+}
+
+void processAuto() {
+    if (robot.operatingMode != OperatingMode::AUTO || robot.estopLatched) return;
+
+    switch (robot.autoState) {
+        case AutoState::IDLE:
+        case AutoState::PAUSED:
+        case AutoState::FINISHED:
+        case AutoState::FAULT:
+            return;
+
+        case AutoState::MOVE:
+            if (!autoMotionStarted) {
+                startCurrentProgramPoint();
+                if (robot.autoState == AutoState::FAULT) return;
+            }
+
+            if (autoMotionStarted && motionFinished()) {
+                autoMotionStarted = false;
+                autoDwellStartedMs = millis();
+                robot.autoState = AutoState::DWELL;
+            }
+            break;
+
+        case AutoState::DWELL: {
+            const uint32_t dwell = programPoints[currentProgramPoint].dwellMs;
+            if (millis() - autoDwellStartedMs < dwell) return;
+
+            currentProgramPoint++;
+            if (currentProgramPoint >= programPointCount) {
+                if (AUTO_LOOP_PROGRAM) {
+                    currentProgramPoint = 0;
+                    Serial.println("AUTO: kolejny cykl");
+                } else {
+                    robot.autoState = AutoState::FINISHED;
+                    Serial.println("AUTO: program zakończony");
+                    return;
+                }
+            }
+
+            robot.autoState = AutoState::MOVE;
+            autoMotionStarted = false;
+            break;
+        }
     }
 }
 
@@ -382,13 +615,13 @@ void disarmGamepad(const char* reason) {
 // E-STOP
 // ============================================================
 void updateEmergencyStop() {
-    // NC: prawidłowa praca = LOW, wciśnięty/przerwany obwód = HIGH.
     const bool estopActive = digitalRead(PIN_ESTOP) == HIGH;
 
     if (estopActive && !robot.estopLatched) {
         robot.estopLatched = true;
-        disarmGamepad(nullptr);
+        robot.gamepadArmed = false;
         emergencyStopMotion();
+        robot.autoState = AutoState::FAULT;
         digitalWrite(PIN_LED_ERROR, HIGH);
         digitalWrite(PIN_LED_STATUS, LOW);
         Serial.println("E-STOP AKTYWNY - wymagany restart sterownika");
@@ -396,39 +629,71 @@ void updateEmergencyStop() {
 }
 
 // ============================================================
-// TRYB STEROWANIA / PANEL
+// TRYBY / PANEL
 // ============================================================
 void toggleControlMode() {
-    if (robot.estopLatched || !robot.gamepadArmed) {
+    if (robot.estopLatched || !robot.gamepadArmed ||
+        robot.operatingMode != OperatingMode::MANUAL) return;
+
+    robot.controlMode =
+        (robot.controlMode == ControlMode::JOINT) ? ControlMode::TOOL : ControlMode::JOINT;
+
+    Serial.println(robot.controlMode == ControlMode::TOOL ? "MANUAL: TOOL" : "MANUAL: JOINT");
+}
+
+void toggleOperatingMode() {
+    if (robot.estopLatched) return;
+    if (axesRunning()) {
+        Serial.println("MODE: zatrzymaj osie przed zmianą MANUAL/AUTO");
         return;
     }
 
-    robot.mode =
-        (robot.mode == ControlMode::JOINT) ? ControlMode::TOOL : ControlMode::JOINT;
+    if (robot.operatingMode == OperatingMode::MANUAL) {
+        robot.operatingMode = OperatingMode::AUTO;
+        robot.autoState = AutoState::IDLE;
+        robot.gamepadArmed = false;
+        previousPadStart = false;
+        Serial.printf("Tryb pracy: AUTO (%u punktów). START = uruchom/pauza\n",
+                      programPointCount);
+    } else {
+        emergencyStopMotion();
+        robot.operatingMode = OperatingMode::MANUAL;
+        robot.autoState = AutoState::IDLE;
+        autoMotionStarted = false;
+        robot.gamepadArmed = false;
+        gamepadNeutralSinceMs = 0;
+        previousPadStart = false;
+        updateActualRobotPosition();
+        robot.joints = robot.actualJoints;
+        robot.tcp = robot.actualTcp;
+        Serial.println("Tryb pracy: MANUAL - oczekiwanie na neutralny pad");
+    }
 
-    Serial.println(robot.mode == ControlMode::TOOL ? "Tryb: TOOL" : "Tryb: JOINT");
-    digitalWrite(PIN_LED_STATUS, robot.mode == ControlMode::TOOL ? HIGH : LOW);
+    digitalWrite(PIN_LED_STATUS,
+                 robot.operatingMode == OperatingMode::AUTO ? HIGH : LOW);
 }
 
 void printCurrentPosition() {
     updateActualRobotPosition();
 
     Serial.println();
-    Serial.println("----- POZYCJA ROBOTA -----");
-    Serial.printf("Ramię 1 ACT/CMD: %.2f / %.2f deg\n",
+    Serial.println("----- STAN ROBOTA -----");
+    Serial.printf("A1 ACT/CMD: %.2f / %.2f deg\n",
                   robot.actualJoints.arm1Deg, robot.joints.arm1Deg);
-    Serial.printf("Ramię 2 ACT/CMD: %.2f / %.2f deg\n",
+    Serial.printf("A2 ACT/CMD: %.2f / %.2f deg\n",
                   robot.actualJoints.arm2Deg, robot.joints.arm2Deg);
-    Serial.printf("Z ACT/CMD: %.2f / %.2f mm\n",
+    Serial.printf("Z  ACT/CMD: %.2f / %.2f mm\n",
                   robot.actualJoints.zMm, robot.joints.zMm);
     Serial.printf("TCP ACT X/Y: %.2f / %.2f mm\n",
                   robot.actualTcp.xMm, robot.actualTcp.yMm);
-    Serial.printf("TCP CMD X/Y: %.2f / %.2f mm\n",
-                  robot.tcp.xMm, robot.tcp.yMm);
-    Serial.printf("Obrót chwytaka: %.1f deg\n", robot.toolRotateDeg);
-    Serial.printf("Chwytak: %.1f deg\n", robot.gripperDeg);
+    Serial.printf("ROT: %.1f  GRIP: %.1f\n",
+                  robot.toolRotateDeg, robot.gripperDeg);
+    Serial.printf("WORK: %s  MANUAL: %s\n",
+                  robot.operatingMode == OperatingMode::AUTO ? "AUTO" : "MANUAL",
+                  robot.controlMode == ControlMode::TOOL ? "TOOL" : "JOINT");
+    Serial.printf("TEACH points: %u/%u\n", programPointCount, MAX_PROGRAM_POINTS);
     Serial.printf("Pad: %s\n", robot.gamepadArmed ? "ARMED" : "SAFE");
-    Serial.println("--------------------------");
+    Serial.println("-----------------------");
 }
 
 void updatePanelButtons() {
@@ -439,13 +704,25 @@ void updatePanelButtons() {
     if (previousModeButton == HIGH && modeButton == LOW &&
         now - lastModeButtonEdgeMs >= BUTTON_DEBOUNCE_MS) {
         lastModeButtonEdgeMs = now;
-        toggleControlMode();
+        toggleOperatingMode();
     }
 
     if (previousTeachButton == HIGH && teachButton == LOW &&
         now - lastTeachButtonEdgeMs >= BUTTON_DEBOUNCE_MS) {
         lastTeachButtonEdgeMs = now;
-        printCurrentPosition();
+        teachPressStartedMs = now;
+    }
+
+    if (previousTeachButton == LOW && teachButton == HIGH &&
+        now - lastTeachButtonEdgeMs >= BUTTON_DEBOUNCE_MS) {
+        lastTeachButtonEdgeMs = now;
+        const uint32_t heldMs = now - teachPressStartedMs;
+        if (heldMs >= TEACH_LONG_PRESS_MS) {
+            clearProgram();
+        } else {
+            teachCurrentPoint();
+        }
+        teachPressStartedMs = 0;
     }
 
     previousModeButton = modeButton;
@@ -477,7 +754,7 @@ void onConnectedController(ControllerPtr controller) {
             robot.gamepadArmed = false;
             gamepadNeutralSinceMs = 0;
             updateControllerConnectedFlag();
-            Serial.printf("Pad podłączony, slot: %d - oczekiwanie na neutralne drążki\n", i);
+            Serial.printf("Pad podłączony, slot: %d\n", i);
             return;
         }
     }
@@ -485,37 +762,31 @@ void onConnectedController(ControllerPtr controller) {
 
 void onDisconnectedController(ControllerPtr controller) {
     for (int i = 0; i < BP32_MAX_GAMEPADS; i++) {
-        if (controllers[i] == controller) {
-            controllers[i] = nullptr;
-        }
+        if (controllers[i] == controller) controllers[i] = nullptr;
     }
 
-    disarmGamepad("Pad rozłączony - ruch zatrzymany");
+    if (robot.operatingMode == OperatingMode::AUTO) {
+        pauseAuto("Pad rozłączony - AUTO PAUSE");
+    } else {
+        if (robot.gamepadArmed) emergencyStopMotion();
+        robot.gamepadArmed = false;
+        Serial.println("Pad rozłączony - MANUAL zatrzymany");
+    }
+
     updateControllerConnectedFlag();
 }
 
-bool gamepadControlsNeutral(
-    float leftX,
-    float leftY,
-    float rightX,
-    float rightY,
-    ControllerPtr controller
-) {
+bool gamepadControlsNeutral(float leftX, float leftY, float rightX, float rightY,
+                            ControllerPtr controller) {
     return leftX == 0.0f && leftY == 0.0f &&
            rightX == 0.0f && rightY == 0.0f &&
            !controller->a() && !controller->b() && !controller->miscStart();
 }
 
-bool updateGamepadArming(
-    float leftX,
-    float leftY,
-    float rightX,
-    float rightY,
-    ControllerPtr controller
-) {
-    if (robot.gamepadArmed) {
-        return true;
-    }
+bool updateGamepadArming(float leftX, float leftY, float rightX, float rightY,
+                         ControllerPtr controller) {
+    if (robot.operatingMode != OperatingMode::MANUAL) return false;
+    if (robot.gamepadArmed) return true;
 
     const uint32_t now = millis();
     if (!gamepadControlsNeutral(leftX, leftY, rightX, rightY, controller)) {
@@ -532,7 +803,7 @@ bool updateGamepadArming(
         robot.gamepadArmed = true;
         previousPadStart = controller->miscStart();
         digitalWrite(PIN_LED_ERROR, LOW);
-        Serial.println("Pad ARMED - sterowanie aktywne");
+        Serial.println("Pad ARMED - MANUAL aktywny");
         return true;
     }
 
@@ -542,41 +813,28 @@ bool updateGamepadArming(
 // ============================================================
 // SERWA
 // ============================================================
-int angleToPulseUs(
-    float angleDeg,
-    float minimumDeg,
-    float maximumDeg,
-    int minimumUs,
-    int maximumUs
-) {
+int angleToPulseUs(float angleDeg, float minimumDeg, float maximumDeg,
+                   int minimumUs, int maximumUs) {
     const float angle = clampFloat(angleDeg, minimumDeg, maximumDeg);
     const float normalized = (angle - minimumDeg) / (maximumDeg - minimumDeg);
     return lroundf(minimumUs + normalized * (maximumUs - minimumUs));
 }
 
-void updateServoTargets(
-    float rotateCommand,
-    float gripCommand,
-    float deltaTimeSeconds
-) {
+void updateServoTargets(float rotateCommand, float gripCommand, float deltaTimeSeconds) {
     robot.toolRotateDeg += rotateCommand * TOOL_ROTATE_SPEED_DEG_S * deltaTimeSeconds;
     robot.gripperDeg += gripCommand * GRIP_SPEED_DEG_S * deltaTimeSeconds;
 
-    robot.toolRotateDeg = clampFloat(
-        robot.toolRotateDeg, TOOL_ROTATE_MIN_DEG, TOOL_ROTATE_MAX_DEG);
-    robot.gripperDeg = clampFloat(
-        robot.gripperDeg, GRIP_MIN_DEG, GRIP_MAX_DEG);
+    robot.toolRotateDeg = clampFloat(robot.toolRotateDeg,
+                                     TOOL_ROTATE_MIN_DEG, TOOL_ROTATE_MAX_DEG);
+    robot.gripperDeg = clampFloat(robot.gripperDeg,
+                                  GRIP_MIN_DEG, GRIP_MAX_DEG);
 }
 
 void refreshServos() {
-    if (robot.estopLatched) {
-        return;
-    }
+    if (robot.estopLatched) return;
 
     const uint32_t now = millis();
-    if (now - lastServoUpdateMs < SERVO_PERIOD_MS) {
-        return;
-    }
+    if (now - lastServoUpdateMs < SERVO_PERIOD_MS) return;
     lastServoUpdateMs = now;
 
     servoRotateFilteredDeg +=
@@ -586,43 +844,27 @@ void refreshServos() {
 
     servoRotate.writeMicroseconds(angleToPulseUs(
         servoRotateFilteredDeg,
-        TOOL_ROTATE_MIN_DEG,
-        TOOL_ROTATE_MAX_DEG,
-        SERVO_ROTATE_MIN_US,
-        SERVO_ROTATE_MAX_US
-    ));
+        TOOL_ROTATE_MIN_DEG, TOOL_ROTATE_MAX_DEG,
+        SERVO_ROTATE_MIN_US, SERVO_ROTATE_MAX_US));
 
     servoGrip.writeMicroseconds(angleToPulseUs(
         servoGripFilteredDeg,
-        GRIP_MIN_DEG,
-        GRIP_MAX_DEG,
-        SERVO_GRIP_MIN_US,
-        SERVO_GRIP_MAX_US
-    ));
+        GRIP_MIN_DEG, GRIP_MAX_DEG,
+        SERVO_GRIP_MIN_US, SERVO_GRIP_MAX_US));
 }
 
 // ============================================================
-// TRYBY RUCHU
+// MANUAL JOINT / TOOL
 // ============================================================
-void processJointMode(
-    float axisX,
-    float axisY,
-    float axisZ,
-    float deltaTimeSeconds
-) {
+void processJointMode(float axisX, float axisY, float axisZ, float deltaTimeSeconds) {
     JointPosition target = robot.joints;
     target.arm1Deg += axisX * ARM_JOG_SPEED_DEG_S * deltaTimeSeconds;
     target.arm2Deg += -axisY * ARM_JOG_SPEED_DEG_S * deltaTimeSeconds;
     target.zMm += -axisZ * Z_JOG_SPEED_MM_S * deltaTimeSeconds;
-    commandJointPosition(target, deltaTimeSeconds);
+    commandManualJointPosition(target, deltaTimeSeconds);
 }
 
-void processToolMode(
-    float axisX,
-    float axisY,
-    float axisZ,
-    float deltaTimeSeconds
-) {
+void processToolMode(float axisX, float axisY, float axisZ, float deltaTimeSeconds) {
     CartesianPosition desired = robot.tcp;
     desired.xMm += axisX * TOOL_XY_SPEED_MM_S * deltaTimeSeconds;
     desired.yMm += -axisY * TOOL_XY_SPEED_MM_S * deltaTimeSeconds;
@@ -632,37 +874,33 @@ void processToolMode(
     JointPosition calculatedJoints;
     constexpr bool ELBOW_UP = true;
 
-    if (!inverseKinematics(
-            desired.xMm,
-            desired.yMm,
-            ELBOW_UP,
-            calculatedJoints)) {
+    if (!inverseKinematics(desired.xMm, desired.yMm, ELBOW_UP, calculatedJoints)) {
         digitalWrite(PIN_LED_ERROR, HIGH);
         return;
     }
 
     calculatedJoints.zMm = desired.zMm;
     digitalWrite(PIN_LED_ERROR, LOW);
-    commandJointPosition(calculatedJoints, deltaTimeSeconds);
+    commandManualJointPosition(calculatedJoints, deltaTimeSeconds);
 }
 
-// ============================================================
-// OBSŁUGA PADA
-// ============================================================
 void processGamepad(float deltaTimeSeconds) {
     ControllerPtr controller = getActiveController();
-    if (controller == nullptr) {
-        return;
-    }
+    if (controller == nullptr) return;
 
     const uint32_t now = millis();
-    if (controller->hasData()) {
-        lastGamepadPacketMs = now;
-    }
+    if (controller->hasData()) lastGamepadPacketMs = now;
 
     if (now - lastGamepadPacketMs > GAMEPAD_TIMEOUT_MS) {
-        disarmGamepad("Timeout pada - ruch zatrzymany");
-        digitalWrite(PIN_LED_ERROR, HIGH);
+        if (robot.operatingMode == OperatingMode::AUTO) {
+            pauseAuto("Timeout pada - AUTO PAUSE");
+        } else {
+            if (robot.gamepadArmed) emergencyStopMotion();
+            robot.gamepadArmed = false;
+            gamepadNeutralSinceMs = 0;
+            digitalWrite(PIN_LED_ERROR, HIGH);
+            Serial.println("Timeout pada - MANUAL zatrzymany");
+        }
         return;
     }
 
@@ -671,14 +909,20 @@ void processGamepad(float deltaTimeSeconds) {
     const float rightX = normalizeJoystick(controller->axisRX());
     const float rightY = normalizeJoystick(controller->axisRY());
 
-    if (!updateGamepadArming(leftX, leftY, rightX, rightY, controller)) {
+    const bool padStart = controller->miscStart();
+
+    if (robot.operatingMode == OperatingMode::AUTO) {
+        if (padStart && !previousPadStart) toggleAutoRunPause();
+        previousPadStart = padStart;
         return;
     }
 
-    const bool padStart = controller->miscStart();
-    if (padStart && !previousPadStart) {
-        toggleControlMode();
+    if (!updateGamepadArming(leftX, leftY, rightX, rightY, controller)) {
+        previousPadStart = padStart;
+        return;
     }
+
+    if (padStart && !previousPadStart) toggleControlMode();
     previousPadStart = padStart;
 
     float gripCommand = 0.0f;
@@ -687,7 +931,7 @@ void processGamepad(float deltaTimeSeconds) {
 
     updateServoTargets(rightX, gripCommand, deltaTimeSeconds);
 
-    if (robot.mode == ControlMode::JOINT) {
+    if (robot.controlMode == ControlMode::JOINT) {
         processJointMode(leftX, leftY, rightY, deltaTimeSeconds);
     } else {
         processToolMode(leftX, leftY, rightY, deltaTimeSeconds);
@@ -695,7 +939,7 @@ void processGamepad(float deltaTimeSeconds) {
 }
 
 // ============================================================
-// INICJALIZACJA SILNIKÓW
+// INICJALIZACJA
 // ============================================================
 bool initializeSteppers() {
     stepperEngine.init(1);
@@ -704,9 +948,7 @@ bool initializeSteppers() {
     stepperArm2 = stepperEngine.stepperConnectToPin(PIN_STEP_ARM2);
     stepperZ    = stepperEngine.stepperConnectToPin(PIN_STEP_Z);
 
-    if (stepperArm1 == nullptr || stepperArm2 == nullptr || stepperZ == nullptr) {
-        return false;
-    }
+    if (stepperArm1 == nullptr || stepperArm2 == nullptr || stepperZ == nullptr) return false;
 
     stepperArm1->setDirectionPin(PIN_DIR_ARM1, true, 200);
     stepperArm2->setDirectionPin(PIN_DIR_ARM2, true, 200);
@@ -723,6 +965,7 @@ bool initializeSteppers() {
     stepperArm2->setAcceleration(ARM2_ACCEL);
     stepperZ->setAcceleration(Z_ACCEL);
 
+    // Ręczny homing: operator ustawia robot w HOME przed włączeniem/resetem.
     stepperArm1->setCurrentPosition(arm1DegreesToSteps(HOME_ARM1_DEG));
     stepperArm2->setCurrentPosition(arm2DegreesToSteps(HOME_ARM2_DEG));
     stepperZ->setCurrentPosition(zMillimetersToSteps(HOME_Z_MM));
@@ -730,9 +973,6 @@ bool initializeSteppers() {
     return true;
 }
 
-// ============================================================
-// SETUP
-// ============================================================
 void setup() {
     Serial.begin(115200);
     delay(500);
@@ -742,15 +982,15 @@ void setup() {
     pinMode(PIN_LED_STATUS, OUTPUT);
     pinMode(PIN_BUTTON_TEACH, INPUT_PULLUP);
     pinMode(PIN_BUTTON_MODE, INPUT_PULLUP);
-
-    // GPIO39 nie ma wewnętrznego pull-up - wymagany rezystor na PCB.
-    pinMode(PIN_ESTOP, INPUT);
+    pinMode(PIN_ESTOP, INPUT); // GPIO39 nie ma wewnętrznego pull-up
 
     digitalWrite(PIN_LED_BT, LOW);
     digitalWrite(PIN_LED_ERROR, LOW);
     digitalWrite(PIN_LED_STATUS, LOW);
 
-    robot.mode = ControlMode::JOINT;
+    robot.controlMode = ControlMode::JOINT;
+    robot.operatingMode = OperatingMode::MANUAL;
+    robot.autoState = AutoState::IDLE;
     robot.estopLatched = false;
     robot.controllerConnected = false;
     robot.gamepadArmed = false;
@@ -772,18 +1012,12 @@ void setup() {
 
     servoRotate.writeMicroseconds(angleToPulseUs(
         servoRotateFilteredDeg,
-        TOOL_ROTATE_MIN_DEG,
-        TOOL_ROTATE_MAX_DEG,
-        SERVO_ROTATE_MIN_US,
-        SERVO_ROTATE_MAX_US
-    ));
+        TOOL_ROTATE_MIN_DEG, TOOL_ROTATE_MAX_DEG,
+        SERVO_ROTATE_MIN_US, SERVO_ROTATE_MAX_US));
     servoGrip.writeMicroseconds(angleToPulseUs(
         servoGripFilteredDeg,
-        GRIP_MIN_DEG,
-        GRIP_MAX_DEG,
-        SERVO_GRIP_MIN_US,
-        SERVO_GRIP_MAX_US
-    ));
+        GRIP_MIN_DEG, GRIP_MAX_DEG,
+        SERVO_GRIP_MIN_US, SERVO_GRIP_MAX_US));
 
     if (!initializeSteppers()) {
         digitalWrite(PIN_LED_ERROR, HIGH);
@@ -793,20 +1027,24 @@ void setup() {
 
     updateActualRobotPosition();
 
+    preferences.begin("scara-auto", false);
+    loadProgram();
+
     BP32.setup(&onConnectedController, &onDisconnectedController);
 
     Serial.println();
-    Serial.println("Sterownik SCARA uruchomiony");
-    Serial.println("Pozycja po włączeniu została uznana za HOME");
-    Serial.println("Ruch będzie odblokowany dopiero po 300 ms neutralnych wejść pada");
+    Serial.println("SCARA Controller - DEV AUTO/TEACH");
+    Serial.println("UWAGA: HOME jest ręczny. Ustaw robot w HOME przed zasileniem/resetem.");
+    Serial.println("MANUAL: START = JOINT/TOOL");
+    Serial.println("TEACH: krótko = zapisz punkt, przytrzymaj 1.8 s = wyczyść program");
+    Serial.println("MODE: MANUAL/AUTO");
+    Serial.println("AUTO: START = start/pause/resume; program pracuje w pętli");
+    Serial.printf("Wczytano %u punktów programu\n", programPointCount);
     printCurrentPosition();
 
     lastControlMs = millis();
 }
 
-// ============================================================
-// LOOP
-// ============================================================
 void loop() {
     BP32.update();
 
@@ -817,13 +1055,13 @@ void loop() {
 
     const uint32_t now = millis();
     if (now - lastControlMs >= CONTROL_PERIOD_MS) {
-        float deltaTimeSeconds =
-            static_cast<float>(now - lastControlMs) / 1000.0f;
+        float deltaTimeSeconds = static_cast<float>(now - lastControlMs) / 1000.0f;
         lastControlMs = now;
         deltaTimeSeconds = clampFloat(deltaTimeSeconds, 0.0f, MAX_CONTROL_DT_S);
 
         if (!robot.estopLatched) {
             processGamepad(deltaTimeSeconds);
+            processAuto();
         }
     }
 
