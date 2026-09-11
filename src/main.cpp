@@ -83,12 +83,18 @@ constexpr float GRIP_MAX_DEG = 95.0f;
 // ============================================================
 // PRĘDKOŚCI
 // ============================================================
-constexpr float ARM_JOG_SPEED_DEG_S = 25.0f;
-constexpr float Z_JOG_SPEED_MM_S    = 5.0f;
-constexpr float TOOL_XY_SPEED_MM_S  = 60.0f;
+// Ramię 1 pracowało poprawnie, więc zostaje przy dotychczasowej prędkości.
+// Ramię 2 ma większe przełożenie i zostało mocno spowolnione.
+constexpr float ARM1_JOG_SPEED_DEG_S = 25.0f;
+constexpr float ARM2_JOG_SPEED_DEG_S = 10.0f;
+constexpr float Z_JOG_SPEED_MM_S     = 1.5f;
+constexpr float TOOL_XY_SPEED_MM_S   = 20.0f;
 
-constexpr float AUTO_ARM_SPEED_DEG_S = 20.0f;
-constexpr float AUTO_Z_SPEED_MM_S    = 5.0f;
+// AUTO ma osobne limity osi. Dzięki temu ramię 2 i Z nie są zmuszane
+// do prędkości ramienia 1, a PTP nadal kończy ruch osi możliwie jednocześnie.
+constexpr float AUTO_ARM1_SPEED_DEG_S = 20.0f;
+constexpr float AUTO_ARM2_SPEED_DEG_S = 8.0f;
+constexpr float AUTO_Z_SPEED_MM_S     = 1.5f;
 
 constexpr float TOOL_ROTATE_SPEED_DEG_S = 35.0f;
 constexpr float GRIP_SPEED_DEG_S        = 45.0f;
@@ -99,13 +105,15 @@ constexpr int SERVO_GRIP_MIN_US   = 500;
 constexpr int SERVO_GRIP_MAX_US   = 2500;
 constexpr float SERVO_FILTER_ALPHA = 0.20f;
 
+// Twarde limity częstotliwości STEP - dodatkowe zabezpieczenie niezależne
+// od prędkości zadawanej przez JOINT / TOOL / AUTO.
 constexpr uint32_t ARM1_MAX_STEP_HZ = 10000;
-constexpr uint32_t ARM2_MAX_STEP_HZ = 10000;
-constexpr uint32_t Z_MAX_STEP_HZ    = 8000;
+constexpr uint32_t ARM2_MAX_STEP_HZ = 3000;
+constexpr uint32_t Z_MAX_STEP_HZ    = 3000;
 
 constexpr uint32_t ARM1_ACCEL = 12000;
-constexpr uint32_t ARM2_ACCEL = 12000;
-constexpr uint32_t Z_ACCEL    = 12000;
+constexpr uint32_t ARM2_ACCEL = 5000;
+constexpr uint32_t Z_ACCEL    = 3000;
 
 // ============================================================
 // CZASY / AUTO
@@ -357,17 +365,24 @@ void commandManualJointPosition(const JointPosition& target, float deltaTimeSeco
         const float arm2Delta = fabsf(clamped.arm2Deg - robot.joints.arm2Deg);
         const float zDelta = fabsf(clamped.zMm - robot.joints.zMm);
 
+        const uint32_t arm1ManualMaxHz = clampStepHz(
+            ARM1_JOG_SPEED_DEG_S * STEPS_PER_DEG_ARM1, ARM1_MAX_STEP_HZ);
+        const uint32_t arm2ManualMaxHz = clampStepHz(
+            ARM2_JOG_SPEED_DEG_S * STEPS_PER_DEG_ARM2, ARM2_MAX_STEP_HZ);
+        const uint32_t zManualMaxHz = clampStepHz(
+            Z_JOG_SPEED_MM_S * STEPS_PER_MM_Z, Z_MAX_STEP_HZ);
+
         if (arm1Delta > 0.0001f) {
             stepperArm1->setSpeedInHz(clampStepHz(
-                arm1Delta / deltaTimeSeconds * STEPS_PER_DEG_ARM1, ARM1_MAX_STEP_HZ));
+                arm1Delta / deltaTimeSeconds * STEPS_PER_DEG_ARM1, arm1ManualMaxHz));
         }
         if (arm2Delta > 0.0001f) {
             stepperArm2->setSpeedInHz(clampStepHz(
-                arm2Delta / deltaTimeSeconds * STEPS_PER_DEG_ARM2, ARM2_MAX_STEP_HZ));
+                arm2Delta / deltaTimeSeconds * STEPS_PER_DEG_ARM2, arm2ManualMaxHz));
         }
         if (zDelta > 0.0001f) {
             stepperZ->setSpeedInHz(clampStepHz(
-                zDelta / deltaTimeSeconds * STEPS_PER_MM_Z, Z_MAX_STEP_HZ));
+                zDelta / deltaTimeSeconds * STEPS_PER_MM_Z, zManualMaxHz));
         }
     }
 
@@ -389,8 +404,8 @@ void commandAutoJointPosition(const JointPosition& target) {
     const float d2 = fabsf(clamped.arm2Deg - robot.actualJoints.arm2Deg);
     const float dz = fabsf(clamped.zMm - robot.actualJoints.zMm);
 
-    const float t1 = d1 / AUTO_ARM_SPEED_DEG_S;
-    const float t2 = d2 / AUTO_ARM_SPEED_DEG_S;
+    const float t1 = d1 / AUTO_ARM1_SPEED_DEG_S;
+    const float t2 = d2 / AUTO_ARM2_SPEED_DEG_S;
     const float tz = dz / AUTO_Z_SPEED_MM_S;
     const float moveTime = fmaxf(0.01f, fmaxf(t1, fmaxf(t2, tz)));
 
@@ -858,8 +873,8 @@ void refreshServos() {
 // ============================================================
 void processJointMode(float axisX, float axisY, float axisZ, float deltaTimeSeconds) {
     JointPosition target = robot.joints;
-    target.arm1Deg += axisX * ARM_JOG_SPEED_DEG_S * deltaTimeSeconds;
-    target.arm2Deg += -axisY * ARM_JOG_SPEED_DEG_S * deltaTimeSeconds;
+    target.arm1Deg += axisX * ARM1_JOG_SPEED_DEG_S * deltaTimeSeconds;
+    target.arm2Deg += -axisY * ARM2_JOG_SPEED_DEG_S * deltaTimeSeconds;
     target.zMm += -axisZ * Z_JOG_SPEED_MM_S * deltaTimeSeconds;
     commandManualJointPosition(target, deltaTimeSeconds);
 }
@@ -955,9 +970,9 @@ bool initializeSteppers() {
     stepperZ->setDirectionPin(PIN_DIR_Z, true, 200);
 
     stepperArm1->setSpeedInHz(clampStepHz(
-        ARM_JOG_SPEED_DEG_S * STEPS_PER_DEG_ARM1, ARM1_MAX_STEP_HZ));
+        ARM1_JOG_SPEED_DEG_S * STEPS_PER_DEG_ARM1, ARM1_MAX_STEP_HZ));
     stepperArm2->setSpeedInHz(clampStepHz(
-        ARM_JOG_SPEED_DEG_S * STEPS_PER_DEG_ARM2, ARM2_MAX_STEP_HZ));
+        ARM2_JOG_SPEED_DEG_S * STEPS_PER_DEG_ARM2, ARM2_MAX_STEP_HZ));
     stepperZ->setSpeedInHz(clampStepHz(
         Z_JOG_SPEED_MM_S * STEPS_PER_MM_Z, Z_MAX_STEP_HZ));
 
