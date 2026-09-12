@@ -116,11 +116,20 @@ constexpr float ARM2_JOG_SPEED_DEG_S = 25.0f;
 constexpr float Z_JOG_SPEED_MM_S     = 1.5f;
 constexpr float TOOL_XY_SPEED_MM_S   = 20.0f;
 
-// PL: Prędkości nominalne programu automatycznego.
-// EN: Nominal speeds used by the automatic program.
+// PL: Bazowe prędkości programu automatycznego.
+// EN: Base speeds used by the automatic program.
 constexpr float AUTO_ARM1_SPEED_DEG_S = 20.0f;
 constexpr float AUTO_ARM2_SPEED_DEG_S = 20.0f;
 constexpr float AUTO_Z_SPEED_MM_S     = 1.5f;
+
+// PL: Override prędkości AUTO dotyczy tylko ramion. D-pad góra/dół zmienia
+//     wartość o 10%, a D-pad lewo przywraca 100%. Z pozostaje bez zmian.
+// EN: AUTO speed override affects the arms only. D-pad up/down changes it
+//     by 10%, while D-pad left restores 100%. Z speed remains unchanged.
+constexpr uint16_t AUTO_ARM_SPEED_PERCENT_DEFAULT = 100;
+constexpr uint16_t AUTO_ARM_SPEED_PERCENT_MIN     = 50;
+constexpr uint16_t AUTO_ARM_SPEED_PERCENT_MAX     = 250;
+constexpr uint16_t AUTO_ARM_SPEED_PERCENT_STEP    = 10;
 
 constexpr float TOOL_ROTATE_SPEED_DEG_S = 35.0f;
 constexpr float GRIP_SPEED_DEG_S        = 45.0f;
@@ -256,6 +265,9 @@ uint32_t teachPressStartedMs = 0;
 float servoRotateFilteredDeg = HOME_TOOL_ROTATE_DEG;
 float servoGripFilteredDeg = HOME_GRIP_DEG;
 
+uint16_t autoArmSpeedPercent = AUTO_ARM_SPEED_PERCENT_DEFAULT;
+uint8_t previousAutoDpad = 0;
+
 bool previousModeButton = LOW;
 bool previousTeachButton = LOW;
 bool previousPadStart = false;
@@ -313,6 +325,47 @@ float arm2StepsToDegrees(int32_t steps) {
 
 float zStepsToMillimeters(int32_t steps) {
     return static_cast<float>(steps) / (STEPS_PER_MM_Z * SIGN_Z);
+}
+
+// PL: Zwraca aktualny mnożnik prędkości ramion AUTO.
+// EN: Return the current AUTO arm speed multiplier.
+float autoArmSpeedScale() {
+    return static_cast<float>(autoArmSpeedPercent) / 100.0f;
+}
+
+void setAutoArmSpeedPercent(int32_t requestedPercent) {
+    const uint16_t clampedPercent = static_cast<uint16_t>(constrain(
+        requestedPercent,
+        static_cast<int32_t>(AUTO_ARM_SPEED_PERCENT_MIN),
+        static_cast<int32_t>(AUTO_ARM_SPEED_PERCENT_MAX)));
+
+    if (clampedPercent == autoArmSpeedPercent) return;
+
+    autoArmSpeedPercent = clampedPercent;
+    Serial.printf("AUTO SPEED ARM: %u%% (A1=%.1f deg/s, A2=%.1f deg/s)\n",
+                  autoArmSpeedPercent,
+                  AUTO_ARM1_SPEED_DEG_S * autoArmSpeedScale(),
+                  AUTO_ARM2_SPEED_DEG_S * autoArmSpeedScale());
+}
+
+// PL: D-pad działa na zboczu, więc jedno naciśnięcie daje dokładnie jeden krok.
+//     Zmiana obowiązuje od następnego punktu PTP, nie w środku bieżącego ruchu.
+// EN: D-pad is edge-triggered, so one press produces exactly one step.
+//     The change takes effect at the next PTP point, not mid-move.
+void processAutoSpeedDpad(uint8_t dpad) {
+    const bool upPressed = (dpad & DPAD_UP) != 0 && (previousAutoDpad & DPAD_UP) == 0;
+    const bool downPressed = (dpad & DPAD_DOWN) != 0 && (previousAutoDpad & DPAD_DOWN) == 0;
+    const bool leftPressed = (dpad & DPAD_LEFT) != 0 && (previousAutoDpad & DPAD_LEFT) == 0;
+
+    if (leftPressed) {
+        setAutoArmSpeedPercent(AUTO_ARM_SPEED_PERCENT_DEFAULT);
+    } else if (upPressed) {
+        setAutoArmSpeedPercent(static_cast<int32_t>(autoArmSpeedPercent) + AUTO_ARM_SPEED_PERCENT_STEP);
+    } else if (downPressed) {
+        setAutoArmSpeedPercent(static_cast<int32_t>(autoArmSpeedPercent) - AUTO_ARM_SPEED_PERCENT_STEP);
+    }
+
+    previousAutoDpad = dpad;
 }
 
 // ============================================================
@@ -458,8 +511,14 @@ void commandAutoJointPosition(const JointPosition& target) {
     const float d2 = fabsf(clamped.arm2Deg - robot.actualJoints.arm2Deg);
     const float dz = fabsf(clamped.zMm - robot.actualJoints.zMm);
 
-    const float t1 = d1 / AUTO_ARM1_SPEED_DEG_S;
-    const float t2 = d2 / AUTO_ARM2_SPEED_DEG_S;
+    // PL: Override skaluje wyłącznie ramiona. Z zachowuje stałą prędkość bazową.
+    // EN: The override scales the arms only. Z keeps its fixed base speed.
+    const float armScale = autoArmSpeedScale();
+    const float arm1AutoSpeed = AUTO_ARM1_SPEED_DEG_S * armScale;
+    const float arm2AutoSpeed = AUTO_ARM2_SPEED_DEG_S * armScale;
+
+    const float t1 = d1 / arm1AutoSpeed;
+    const float t2 = d2 / arm2AutoSpeed;
     const float tz = dz / AUTO_Z_SPEED_MM_S;
     const float moveTime = fmaxf(0.01f, fmaxf(t1, fmaxf(t2, tz)));
 
@@ -595,7 +654,8 @@ void startAuto() {
     autoMotionStarted = false;
     robot.autoState = AutoState::MOVE;
     digitalWrite(PIN_LED_ERROR, LOW);
-    Serial.printf("AUTO START: %u punktów\n", programPointCount);
+    Serial.printf("AUTO START: %u punktów, ARM speed %u%%\n",
+                  programPointCount, autoArmSpeedPercent);
 }
 
 void toggleAutoRunPause() {
@@ -638,8 +698,8 @@ void startCurrentProgramPoint() {
     commandAutoJointPosition(p.joints);
     autoMotionStarted = true;
 
-    Serial.printf("AUTO -> P%02u/%02u\n",
-                  currentProgramPoint + 1, programPointCount);
+    Serial.printf("AUTO -> P%02u/%02u  ARM speed=%u%%\n",
+                  currentProgramPoint + 1, programPointCount, autoArmSpeedPercent);
 }
 
 // PL: Maszyna stanów AUTO: ruch -> postój -> kolejny punkt.
@@ -736,8 +796,9 @@ void toggleOperatingMode() {
         robot.autoState = AutoState::IDLE;
         robot.gamepadArmed = false;
         previousPadStart = false;
-        Serial.printf("Tryb pracy: AUTO (%u punktów). START = uruchom/pauza\n",
-                      programPointCount);
+        previousAutoDpad = 0;
+        Serial.printf("Tryb pracy: AUTO (%u punktów). START = uruchom/pauza, ARM speed=%u%%\n",
+                      programPointCount, autoArmSpeedPercent);
     } else {
         emergencyStopMotion();
         robot.operatingMode = OperatingMode::MANUAL;
@@ -746,6 +807,7 @@ void toggleOperatingMode() {
         robot.gamepadArmed = false;
         gamepadNeutralSinceMs = 0;
         previousPadStart = false;
+        previousAutoDpad = 0;
         updateActualRobotPosition();
         robot.joints = robot.actualJoints;
         robot.tcp = robot.actualTcp;
@@ -774,6 +836,7 @@ void printCurrentPosition() {
     Serial.printf("WORK: %s  MANUAL: %s\n",
                   robot.operatingMode == OperatingMode::AUTO ? "AUTO" : "MANUAL",
                   robot.controlMode == ControlMode::TOOL ? "TOOL" : "JOINT");
+    Serial.printf("AUTO ARM speed: %u%%\n", autoArmSpeedPercent);
     Serial.printf("TEACH points: %u/%u\n", programPointCount, MAX_PROGRAM_POINTS);
     Serial.printf("Pad: %s\n", robot.gamepadArmed ? "ARMED" : "SAFE");
     Serial.println("-----------------------");
@@ -844,6 +907,7 @@ void onConnectedController(ControllerPtr controller) {
             lastGamepadPacketMs = millis();
             robot.gamepadArmed = false;
             gamepadNeutralSinceMs = 0;
+            previousAutoDpad = 0;
             updateControllerConnectedFlag();
             Serial.printf("Pad podłączony, slot: %d\n", i);
             return;
@@ -857,6 +921,8 @@ void onDisconnectedController(ControllerPtr controller) {
     for (int i = 0; i < BP32_MAX_GAMEPADS; i++) {
         if (controllers[i] == controller) controllers[i] = nullptr;
     }
+
+    previousAutoDpad = 0;
 
     if (robot.operatingMode == OperatingMode::AUTO) {
         pauseAuto("Pad rozłączony - AUTO PAUSE");
@@ -987,10 +1053,10 @@ void processToolMode(float axisX, float axisY, float axisZ, float deltaTimeSecon
     commandManualJointPosition(calculatedJoints, deltaTimeSeconds);
 }
 
-// PL: W AUTO pad służy wyłącznie do START/PAUSE/RESUME.
+// PL: W AUTO pad służy do START/PAUSE/RESUME oraz regulacji prędkości ramion.
 //     Timeout hasData() jest używany tylko w MANUAL; brak nowych ramek nie
 //     oznacza rozłączenia kontrolera podczas programu automatycznego.
-// EN: In AUTO the gamepad is used only for START/PAUSE/RESUME.
+// EN: In AUTO the gamepad is used for START/PAUSE/RESUME and arm speed override.
 //     hasData() timeout is used only in MANUAL; missing new packets does not
 //     mean the controller disconnected during an automatic program.
 void processGamepad(float deltaTimeSeconds) {
@@ -1011,12 +1077,20 @@ void processGamepad(float deltaTimeSeconds) {
     const float rightX = normalizeJoystick(controller->axisRX());
     const float rightY = normalizeJoystick(controller->axisRY());
     const bool padStart = controller->miscStart();
+    const uint8_t dpad = controller->dpad();
 
     if (robot.operatingMode == OperatingMode::AUTO) {
+        processAutoSpeedDpad(dpad);
         if (padStart && !previousPadStart) toggleAutoRunPause();
         previousPadStart = padStart;
         return;
     }
+
+    // PL: Zapamiętaj stan D-pada także w MANUAL, aby przejście do AUTO
+    //     z przytrzymanym kierunkiem nie generowało fałszywego kliknięcia.
+    // EN: Track D-pad state in MANUAL as well so switching to AUTO while
+    //     holding a direction does not create a false edge.
+    previousAutoDpad = dpad;
 
     if (controller->hasData()) lastGamepadPacketMs = now;
 
@@ -1166,6 +1240,7 @@ void setup() {
     Serial.println("TEACH: krótko = zapisz punkt, przytrzymaj 1.8 s = wyczyść program");
     Serial.println("MODE: MANUAL/AUTO");
     Serial.println("AUTO: START = start/pause/resume; program pracuje w pętli");
+    Serial.println("AUTO SPEED: D-pad góra/dół = +/-10%, lewo = 100% (ramiona 50-250%; Z bez zmian)");
     Serial.printf("Wczytano %u punktów programu\n", programPointCount);
     printCurrentPosition();
 
