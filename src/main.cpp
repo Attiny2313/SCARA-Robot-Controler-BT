@@ -82,10 +82,12 @@ constexpr float GRIP_MAX_DEG = 95.0f;
 // ============================================================
 // PRĘDKOŚCI
 // ============================================================
-constexpr float ARM_JOG_SPEED_DEG_S = 25.0f;
-// Oś Z była zbyt szybka; 5 mm/s daje 8000 STEP/s przy obecnej mechanice.
-constexpr float Z_JOG_SPEED_MM_S    = 5.0f;
-constexpr float TOOL_XY_SPEED_MM_S  = 60.0f;
+// Osobne prędkości ułatwiają strojenie osi o różnych przełożeniach.
+constexpr float ARM1_JOG_SPEED_DEG_S = 12.5f;
+constexpr float ARM2_JOG_SPEED_DEG_S = 12.5f;
+// 2 mm/s = 3200 STEP/s przy śrubie 2 mm/obr. i mikrokroku 1/16.
+constexpr float Z_JOG_SPEED_MM_S     = 2.0f;
+constexpr float TOOL_XY_SPEED_MM_S   = 25.0f;
 
 constexpr float TOOL_ROTATE_SPEED_DEG_S = 35.0f;
 constexpr float GRIP_SPEED_DEG_S        = 45.0f;
@@ -96,13 +98,13 @@ constexpr int SERVO_GRIP_MIN_US   = 500;
 constexpr int SERVO_GRIP_MAX_US   = 2500;
 constexpr float SERVO_FILTER_ALPHA = 0.20f;
 
-constexpr uint32_t ARM1_MAX_STEP_HZ = 10000;
-constexpr uint32_t ARM2_MAX_STEP_HZ = 10000;
-constexpr uint32_t Z_MAX_STEP_HZ    = 8000;
+constexpr uint32_t ARM1_MAX_STEP_HZ = 600;
+constexpr uint32_t ARM2_MAX_STEP_HZ = 1000;
+constexpr uint32_t Z_MAX_STEP_HZ    = 3200;
 
-constexpr uint32_t ARM1_ACCEL = 12000;
-constexpr uint32_t ARM2_ACCEL = 12000;
-constexpr uint32_t Z_ACCEL    = 12000;
+constexpr uint32_t ARM1_ACCEL = 1500;
+constexpr uint32_t ARM2_ACCEL = 2500;
+constexpr uint32_t Z_ACCEL    = 3200;
 
 // ============================================================
 // CZASY I WEJŚCIA
@@ -611,8 +613,8 @@ void processJointMode(
     float deltaTimeSeconds
 ) {
     JointPosition target = robot.joints;
-    target.arm1Deg += axisX * ARM_JOG_SPEED_DEG_S * deltaTimeSeconds;
-    target.arm2Deg += -axisY * ARM_JOG_SPEED_DEG_S * deltaTimeSeconds;
+    target.arm1Deg += axisX * ARM1_JOG_SPEED_DEG_S * deltaTimeSeconds;
+    target.arm2Deg += -axisY * ARM2_JOG_SPEED_DEG_S * deltaTimeSeconds;
     target.zMm += -axisZ * Z_JOG_SPEED_MM_S * deltaTimeSeconds;
     commandJointPosition(target, deltaTimeSeconds);
 }
@@ -713,9 +715,9 @@ bool initializeSteppers() {
     stepperZ->setDirectionPin(PIN_DIR_Z, true, 200);
 
     stepperArm1->setSpeedInHz(clampStepHz(
-        ARM_JOG_SPEED_DEG_S * STEPS_PER_DEG_ARM1, ARM1_MAX_STEP_HZ));
+        ARM1_JOG_SPEED_DEG_S * STEPS_PER_DEG_ARM1, ARM1_MAX_STEP_HZ));
     stepperArm2->setSpeedInHz(clampStepHz(
-        ARM_JOG_SPEED_DEG_S * STEPS_PER_DEG_ARM2, ARM2_MAX_STEP_HZ));
+        ARM2_JOG_SPEED_DEG_S * STEPS_PER_DEG_ARM2, ARM2_MAX_STEP_HZ));
     stepperZ->setSpeedInHz(clampStepHz(
         Z_JOG_SPEED_MM_S * STEPS_PER_MM_Z, Z_MAX_STEP_HZ));
 
