@@ -116,8 +116,8 @@ constexpr uint32_t Z_MAX_STEP_HZ    = 1600;
 
 constexpr uint32_t ARM1_ACCEL = 12000;
 constexpr uint32_t ARM2_ACCEL = 5000;
-// Łagodna rampa Z: 1000 STEP/s^2 = 0.625 mm/s^2 przy 1600 STEP/mm.
-constexpr uint32_t Z_ACCEL    = 1000;
+// Bardzo łagodny start Z: 300 STEP/s^2 = 0.1875 mm/s^2 przy 1600 STEP/mm.
+constexpr uint32_t Z_ACCEL    = 300;
 
 // ============================================================
 // CZASY / AUTO
