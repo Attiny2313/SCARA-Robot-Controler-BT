@@ -1,3 +1,17 @@
+/*
+ * SCARA Robot Controller / Sterownik robota SCARA
+ *
+ * PL: Sterownik 3-osiowego robota SCARA z ręcznym sterowaniem z pada,
+ *     zapisem punktów TEACH i automatycznym odtwarzaniem programu.
+ * EN: Controller for a 3-axis SCARA robot with gamepad manual control,
+ *     TEACH point storage and automatic program playback.
+ *
+ * PL: Homing jest wykonywany ręcznie. Przed uruchomieniem operator musi
+ *     ustawić robota w pozycji HOME zdefiniowanej poniżej.
+ * EN: Homing is manual. Before startup, the operator must place the robot
+ *     in the HOME position defined below.
+ */
+
 #include <Arduino.h>
 #include <Bluepad32.h>
 #include <FastAccelStepper.h>
@@ -5,7 +19,7 @@
 #include <Preferences.h>
 
 // ============================================================
-// PINY
+// PINY / PIN ASSIGNMENTS
 // ============================================================
 constexpr uint8_t PIN_LED_BT       = 4;
 constexpr uint8_t PIN_LED_ERROR    = 16;
@@ -25,13 +39,16 @@ constexpr uint8_t PIN_BUTTON_TEACH = 25;
 constexpr uint8_t PIN_BUTTON_MODE  = 33;
 constexpr uint8_t PIN_ESTOP        = 39;
 
-// Zostawione sprzętowo na przyszłość. Homing w tym projekcie jest ręczny.
+// PL: Wejścia krańcówek są zachowane sprzętowo na przyszłość.
+//     Aktualna wersja programu używa ręcznego homingu.
+// EN: Endstop inputs are kept in hardware for future use.
+//     The current firmware uses manual homing.
 constexpr uint8_t PIN_ENDSTOP_Z    = 34;
 constexpr uint8_t PIN_ENDSTOP_ARM1 = 35;
 constexpr uint8_t PIN_ENDSTOP_ARM2 = 36;
 
 // ============================================================
-// KONFIGURACJA MECHANIKI
+// KONFIGURACJA MECHANIKI / MECHANICAL CONFIGURATION
 // ============================================================
 constexpr float ARM_LENGTH_1_MM = 91.61f;
 constexpr float ARM_LENGTH_2_MM = 97.528f;
@@ -44,6 +61,8 @@ constexpr float GEAR_ARM2 = 7.280f;
 constexpr float Z_SCREW_LEAD_MM = 2.0f;
 constexpr float GEAR_Z          = 1.0f;
 
+// PL: Znak osi pozwala odwrócić kierunek logiczny bez przepinania przewodów.
+// EN: Axis sign allows logical direction reversal without rewiring the motor.
 constexpr int8_t SIGN_ARM1 = 1;
 constexpr int8_t SIGN_ARM2 = 1;
 constexpr int8_t SIGN_Z    = 1;
@@ -56,10 +75,12 @@ constexpr float STEPS_PER_MM_Z =
     MOTOR_STEPS_REV * MICROSTEPS * GEAR_Z / Z_SCREW_LEAD_MM;
 
 // ============================================================
-// RĘCZNY HOME
+// RĘCZNY HOME / MANUAL HOME
 // ============================================================
-// Przed włączeniem/resetem robot musi zostać ręcznie ustawiony w HOME.
-// Program przyjmuje poniższe współrzędne jako aktualną pozycję po starcie.
+// PL: Przed włączeniem lub resetem robot musi zostać ręcznie ustawiony
+//     w pozycji HOME. Program przyjmuje te wartości jako pozycję aktualną.
+// EN: Before power-up or reset the robot must be manually placed in HOME.
+//     The firmware assumes these values are the actual startup position.
 constexpr float HOME_ARM1_DEG = 115.0f;
 constexpr float HOME_ARM2_DEG = -147.0f;
 constexpr float HOME_Z_MM     = 0.0f;
@@ -67,8 +88,10 @@ constexpr float HOME_TOOL_ROTATE_DEG = 90.0f;
 constexpr float HOME_GRIP_DEG        = 30.0f;
 
 // ============================================================
-// OGRANICZENIA PROGRAMOWE
+// OGRANICZENIA PROGRAMOWE / SOFTWARE LIMITS
 // ============================================================
+// PL: Ograniczenia chronią mechanikę w trybach MANUAL, TOOL i AUTO.
+// EN: These limits protect the mechanism in MANUAL, TOOL and AUTO modes.
 constexpr float ARM1_MIN_DEG = -115.0f;
 constexpr float ARM1_MAX_DEG =  115.0f;
 constexpr float ARM2_MIN_DEG = -147.0f;
@@ -81,17 +104,20 @@ constexpr float GRIP_MIN_DEG = 15.0f;
 constexpr float GRIP_MAX_DEG = 95.0f;
 
 // ============================================================
-// PRĘDKOŚCI
+// PRĘDKOŚCI I PRZYSPIESZENIA / SPEEDS AND ACCELERATIONS
 // ============================================================
-// ARM1 i ARM2 mają tę samą prędkość kątową.
+// PL: ARM1 i ARM2 mają tę samą prędkość kątową w sterowaniu ręcznym.
+// EN: ARM1 and ARM2 use the same angular speed in manual control.
 constexpr float ARM1_JOG_SPEED_DEG_S = 25.0f;
 constexpr float ARM2_JOG_SPEED_DEG_S = 25.0f;
 
-// Z po poprawnym ustawieniu MS1/MS2/MS3: 1.5 mm/s.
+// PL: Prędkość osi Z po prawidłowym ustawieniu MS1/MS2/MS3.
+// EN: Z-axis speed with MS1/MS2/MS3 configured correctly.
 constexpr float Z_JOG_SPEED_MM_S     = 1.5f;
 constexpr float TOOL_XY_SPEED_MM_S   = 20.0f;
 
-// AUTO: oba ramiona mają tę samą prędkość kątową.
+// PL: Prędkości nominalne programu automatycznego.
+// EN: Nominal speeds used by the automatic program.
 constexpr float AUTO_ARM1_SPEED_DEG_S = 20.0f;
 constexpr float AUTO_ARM2_SPEED_DEG_S = 20.0f;
 constexpr float AUTO_Z_SPEED_MM_S     = 1.5f;
@@ -105,20 +131,26 @@ constexpr int SERVO_GRIP_MIN_US   = 500;
 constexpr int SERVO_GRIP_MAX_US   = 2500;
 constexpr float SERVO_FILTER_ALPHA = 0.20f;
 
-// Twarde limity częstotliwości STEP - dodatkowe zabezpieczenie niezależne
-// od prędkości zadawanej przez JOINT / TOOL / AUTO.
+// PL: Twarde limity częstotliwości STEP są dodatkowym zabezpieczeniem,
+//     niezależnym od prędkości zadawanej przez JOINT, TOOL lub AUTO.
+// EN: Hard STEP frequency limits provide an additional safety layer,
+//     independent of speeds requested by JOINT, TOOL or AUTO control.
 constexpr uint32_t ARM1_MAX_STEP_HZ = 10000;
 constexpr uint32_t ARM2_MAX_STEP_HZ = 3000;
-// Przy 1600 STEP/mm: 2400 Hz = 1.5 mm/s.
+
+// PL: Przy 1600 STEP/mm: 2400 Hz = 1.5 mm/s.
+// EN: At 1600 STEP/mm: 2400 Hz = 1.5 mm/s.
 constexpr uint32_t Z_MAX_STEP_HZ    = 2400;
 
 constexpr uint32_t ARM1_ACCEL = 12000;
 constexpr uint32_t ARM2_ACCEL = 5000;
-// Bardzo łagodny start Z: 300 STEP/s^2 = 0.1875 mm/s^2 przy 1600 STEP/mm.
+
+// PL: Bardzo łagodny start Z: 300 STEP/s² = 0.1875 mm/s² przy 1600 STEP/mm.
+// EN: Very gentle Z start: 300 STEP/s² = 0.1875 mm/s² at 1600 STEP/mm.
 constexpr uint32_t Z_ACCEL    = 300;
 
 // ============================================================
-// CZASY / AUTO
+// CZASY I AUTO / TIMING AND AUTO SETTINGS
 // ============================================================
 constexpr uint32_t CONTROL_PERIOD_MS = 10;
 constexpr uint32_t SERVO_PERIOD_MS = 20;
@@ -133,7 +165,7 @@ constexpr uint8_t MAX_PROGRAM_POINTS = 20;
 constexpr bool AUTO_LOOP_PROGRAM = true;
 
 // ============================================================
-// STRUKTURY
+// STRUKTURY I STANY / DATA TYPES AND STATES
 // ============================================================
 enum class ControlMode : uint8_t {
     JOINT,
@@ -166,6 +198,8 @@ struct CartesianPosition {
     float zMm;
 };
 
+// PL: Jeden punkt programu zawiera pozycję osi, pozycje serw i czas postoju.
+// EN: One program point stores joint positions, servo targets and dwell time.
 struct ProgramPoint {
     JointPosition joints;
     float toolRotateDeg;
@@ -192,7 +226,7 @@ struct RobotState {
 };
 
 // ============================================================
-// OBIEKTY / STAN
+// OBIEKTY I STAN GLOBALNY / GLOBAL OBJECTS AND STATE
 // ============================================================
 FastAccelStepperEngine stepperEngine;
 FastAccelStepper* stepperArm1 = nullptr;
@@ -227,7 +261,7 @@ bool previousTeachButton = LOW;
 bool previousPadStart = false;
 
 // ============================================================
-// POMOCNICZE
+// FUNKCJE POMOCNICZE / HELPER FUNCTIONS
 // ============================================================
 float clampFloat(float value, float minimum, float maximum) {
     if (value < minimum) return minimum;
@@ -249,6 +283,8 @@ float radToDeg(float radians) {
     return radians * 180.0f / PI;
 }
 
+// PL: Normalizacja osi pada do zakresu -1...+1 z martwą strefą.
+// EN: Normalize a gamepad axis to -1...+1 with a dead zone around center.
 float normalizeJoystick(int32_t value) {
     if (abs(value) < JOYSTICK_DEADZONE) return 0.0f;
     constexpr float maximumAxisValue = 512.0f;
@@ -280,8 +316,10 @@ float zStepsToMillimeters(int32_t steps) {
 }
 
 // ============================================================
-// KINEMATYKA
+// KINEMATYKA / KINEMATICS
 // ============================================================
+// PL: Kinematyka prosta: kąty obu ramion -> pozycja TCP X/Y/Z.
+// EN: Forward kinematics: arm angles -> TCP position X/Y/Z.
 CartesianPosition forwardKinematics(const JointPosition& joints) {
     const float theta1 = degToRad(joints.arm1Deg);
     const float theta2 = degToRad(joints.arm2Deg);
@@ -295,6 +333,10 @@ CartesianPosition forwardKinematics(const JointPosition& joints) {
     return result;
 }
 
+// PL: Kinematyka odwrotna dla płaszczyzny XY. Parametr elbowUp wybiera
+//     jedną z dwóch geometrycznie możliwych konfiguracji ramienia.
+// EN: Inverse kinematics for the XY plane. elbowUp selects one of the two
+//     geometrically possible arm configurations.
 bool inverseKinematics(float xMm, float yMm, bool elbowUp, JointPosition& result) {
     const float radiusSquared = xMm * xMm + yMm * yMm;
     float cosTheta2 =
@@ -322,8 +364,10 @@ bool inverseKinematics(float xMm, float yMm, bool elbowUp, JointPosition& result
 }
 
 // ============================================================
-// POZYCJA / RUCH
+// POZYCJA I RUCH / POSITION AND MOTION
 // ============================================================
+// PL: Pozycja rzeczywista jest wyliczana z liczników kroków FastAccelStepper.
+// EN: Actual position is calculated from FastAccelStepper step counters.
 void updateActualRobotPosition() {
     if (stepperArm1 == nullptr || stepperArm2 == nullptr || stepperZ == nullptr) return;
 
@@ -350,12 +394,16 @@ JointPosition clampJointPosition(const JointPosition& target) {
     };
 }
 
+// PL: Natychmiastowe zatrzymanie generatorów kroków.
+// EN: Immediately stop all step generators.
 void emergencyStopMotion() {
     if (stepperArm1 != nullptr) stepperArm1->forceStop();
     if (stepperArm2 != nullptr) stepperArm2->forceStop();
     if (stepperZ != nullptr) stepperZ->forceStop();
 }
 
+// PL: Ruch ręczny przyjmuje małe, cyklicznie aktualizowane cele pozycji.
+// EN: Manual motion receives small position targets updated every control cycle.
 void commandManualJointPosition(const JointPosition& target, float deltaTimeSeconds) {
     if (robot.estopLatched || !robot.gamepadArmed ||
         robot.operatingMode != OperatingMode::MANUAL) return;
@@ -396,6 +444,10 @@ void commandManualJointPosition(const JointPosition& target, float deltaTimeSeco
     robot.tcp = forwardKinematics(robot.joints);
 }
 
+// PL: AUTO wykonuje ruch PTP. Prędkości osi są skalowane tak, aby w przybliżeniu
+//     zakończyć ruch w tym samym czasie; przyspieszenia pozostają niezależne.
+// EN: AUTO performs PTP motion. Axis speeds are scaled so the axes finish at
+//     approximately the same time; acceleration profiles remain independent.
 void commandAutoJointPosition(const JointPosition& target) {
     if (robot.estopLatched || robot.operatingMode != OperatingMode::AUTO) return;
 
@@ -433,8 +485,10 @@ void commandAutoJointPosition(const JointPosition& target) {
 }
 
 // ============================================================
-// PROGRAM TEACH / NVS
+// PROGRAM TEACH I NVS / TEACH PROGRAM AND NVS STORAGE
 // ============================================================
+// PL: Program jest zapisywany w pamięci NVS ESP32 i pozostaje po restarcie.
+// EN: The taught program is stored in ESP32 NVS and survives a restart.
 void saveProgram() {
     preferences.putUChar("count", programPointCount);
     if (programPointCount > 0) {
@@ -471,6 +525,8 @@ void clearProgram() {
     Serial.println("TEACH: program wyczyszczony");
 }
 
+// PL: Punkt można zapisać tylko w MANUAL i po całkowitym zatrzymaniu osi.
+// EN: A point can only be taught in MANUAL and after all axes have stopped.
 void teachCurrentPoint() {
     if (robot.estopLatched || robot.operatingMode != OperatingMode::MANUAL) return;
     if (axesRunning()) {
@@ -499,7 +555,7 @@ void teachCurrentPoint() {
 }
 
 // ============================================================
-// AUTO
+// TRYB AUTOMATYCZNY / AUTOMATIC MODE
 // ============================================================
 void setAutoFault(const char* reason) {
     emergencyStopMotion();
@@ -509,6 +565,10 @@ void setAutoFault(const char* reason) {
     if (reason != nullptr) Serial.println(reason);
 }
 
+// PL: Pauza zatrzymuje osie i synchronizuje pozycję z licznikami kroków,
+//     dzięki czemu wznowienie startuje z faktycznej pozycji robota.
+// EN: Pause stops the axes and synchronizes the commanded position with the
+//     step counters so resume starts from the robot's actual position.
 void pauseAuto(const char* reason) {
     if (robot.operatingMode != OperatingMode::AUTO) return;
     if (robot.autoState == AutoState::IDLE ||
@@ -582,6 +642,8 @@ void startCurrentProgramPoint() {
                   currentProgramPoint + 1, programPointCount);
 }
 
+// PL: Maszyna stanów AUTO: ruch -> postój -> kolejny punkt.
+// EN: AUTO state machine: move -> dwell -> next point.
 void processAuto() {
     if (robot.operatingMode != OperatingMode::AUTO || robot.estopLatched) return;
 
@@ -629,8 +691,10 @@ void processAuto() {
 }
 
 // ============================================================
-// E-STOP
+// E-STOP / EMERGENCY STOP
 // ============================================================
+// PL: E-STOP jest zatrzaskiwany programowo. Po aktywacji wymagany jest restart.
+// EN: E-STOP is latched in software. A restart is required after activation.
 void updateEmergencyStop() {
     const bool estopActive = digitalRead(PIN_ESTOP) == HIGH;
 
@@ -646,7 +710,7 @@ void updateEmergencyStop() {
 }
 
 // ============================================================
-// TRYBY / PANEL
+// TRYBY I PANEL / MODES AND CONTROL PANEL
 // ============================================================
 void toggleControlMode() {
     if (robot.estopLatched || !robot.gamepadArmed ||
@@ -658,6 +722,8 @@ void toggleControlMode() {
     Serial.println(robot.controlMode == ControlMode::TOOL ? "MANUAL: TOOL" : "MANUAL: JOINT");
 }
 
+// PL: MODE przełącza wyłącznie przy zatrzymanych osiach.
+// EN: MODE can only be changed while all axes are stopped.
 void toggleOperatingMode() {
     if (robot.estopLatched) return;
     if (axesRunning()) {
@@ -713,19 +779,21 @@ void printCurrentPosition() {
     Serial.println("-----------------------");
 }
 
+// PL: Oba przyciski panelu są aktywne stanem HIGH i korzystają z INPUT_PULLDOWN.
+//     TEACH: krótkie naciśnięcie zapisuje punkt, długie kasuje program.
+// EN: Both panel buttons are active HIGH and use INPUT_PULLDOWN.
+//     TEACH: short press stores a point, long press clears the program.
 void updatePanelButtons() {
     const uint32_t now = millis();
     const bool modeButton = digitalRead(PIN_BUTTON_MODE);
     const bool teachButton = digitalRead(PIN_BUTTON_TEACH);
 
-    // MODE na płytce jest aktywny stanem HIGH.
     if (previousModeButton == LOW && modeButton == HIGH &&
         now - lastModeButtonEdgeMs >= BUTTON_DEBOUNCE_MS) {
         lastModeButtonEdgeMs = now;
         toggleOperatingMode();
     }
 
-    // TEACH na płytce jest aktywny stanem HIGH.
     if (previousTeachButton == LOW && teachButton == HIGH &&
         now - lastTeachButtonEdgeMs >= BUTTON_DEBOUNCE_MS) {
         lastTeachButtonEdgeMs = now;
@@ -753,7 +821,7 @@ void updatePanelButtons() {
 }
 
 // ============================================================
-// BLUEPAD32
+// BLUEPAD32 I PAD / BLUEPAD32 AND GAMEPAD
 // ============================================================
 ControllerPtr getActiveController() {
     for (ControllerPtr controller : controllers) {
@@ -783,6 +851,8 @@ void onConnectedController(ControllerPtr controller) {
     }
 }
 
+// PL: Rozłączenie pada w AUTO zatrzymuje cykl przez PAUSE.
+// EN: Gamepad disconnection during AUTO pauses the cycle.
 void onDisconnectedController(ControllerPtr controller) {
     for (int i = 0; i < BP32_MAX_GAMEPADS; i++) {
         if (controllers[i] == controller) controllers[i] = nullptr;
@@ -806,6 +876,10 @@ bool gamepadControlsNeutral(float leftX, float leftY, float rightX, float rightY
            !controller->a() && !controller->b() && !controller->miscStart();
 }
 
+// PL: Po połączeniu pad musi przez chwilę pozostawać neutralny.
+//     Zapobiega to przypadkowemu ruchowi tuż po sparowaniu.
+// EN: After connection the gamepad must remain neutral briefly.
+//     This prevents unintended motion immediately after pairing.
 bool updateGamepadArming(float leftX, float leftY, float rightX, float rightY,
                          ControllerPtr controller) {
     if (robot.operatingMode != OperatingMode::MANUAL) return false;
@@ -834,7 +908,7 @@ bool updateGamepadArming(float leftX, float leftY, float rightX, float rightY,
 }
 
 // ============================================================
-// SERWA
+// SERWA NARZĘDZIA / TOOL SERVOS
 // ============================================================
 int angleToPulseUs(float angleDeg, float minimumDeg, float maximumDeg,
                    int minimumUs, int maximumUs) {
@@ -853,6 +927,8 @@ void updateServoTargets(float rotateCommand, float gripCommand, float deltaTimeS
                                   GRIP_MIN_DEG, GRIP_MAX_DEG);
 }
 
+// PL: Prosty filtr pierwszego rzędu wygładza skokowe zmiany zadania serw.
+// EN: A simple first-order filter smooths abrupt servo target changes.
 void refreshServos() {
     if (robot.estopLatched) return;
 
@@ -877,8 +953,10 @@ void refreshServos() {
 }
 
 // ============================================================
-// MANUAL JOINT / TOOL
+// MANUAL JOINT I TOOL / MANUAL JOINT AND TOOL CONTROL
 // ============================================================
+// PL: JOINT steruje osiami bezpośrednio: ARM1, ARM2 i Z.
+// EN: JOINT directly controls the ARM1, ARM2 and Z axes.
 void processJointMode(float axisX, float axisY, float axisZ, float deltaTimeSeconds) {
     JointPosition target = robot.joints;
     target.arm1Deg += axisX * ARM1_JOG_SPEED_DEG_S * deltaTimeSeconds;
@@ -887,6 +965,8 @@ void processJointMode(float axisX, float axisY, float axisZ, float deltaTimeSeco
     commandManualJointPosition(target, deltaTimeSeconds);
 }
 
+// PL: TOOL steruje TCP w X/Y; kąty ramion są obliczane przez IK.
+// EN: TOOL controls TCP in X/Y; joint angles are calculated by IK.
 void processToolMode(float axisX, float axisY, float axisZ, float deltaTimeSeconds) {
     CartesianPosition desired = robot.tcp;
     desired.xMm += axisX * TOOL_XY_SPEED_MM_S * deltaTimeSeconds;
@@ -907,6 +987,12 @@ void processToolMode(float axisX, float axisY, float axisZ, float deltaTimeSecon
     commandManualJointPosition(calculatedJoints, deltaTimeSeconds);
 }
 
+// PL: W AUTO pad służy wyłącznie do START/PAUSE/RESUME.
+//     Timeout hasData() jest używany tylko w MANUAL; brak nowych ramek nie
+//     oznacza rozłączenia kontrolera podczas programu automatycznego.
+// EN: In AUTO the gamepad is used only for START/PAUSE/RESUME.
+//     hasData() timeout is used only in MANUAL; missing new packets does not
+//     mean the controller disconnected during an automatic program.
 void processGamepad(float deltaTimeSeconds) {
     ControllerPtr controller = getActiveController();
 
@@ -926,8 +1012,6 @@ void processGamepad(float deltaTimeSeconds) {
     const float rightY = normalizeJoystick(controller->axisRY());
     const bool padStart = controller->miscStart();
 
-    // W AUTO pad służy tylko do START/PAUSE/RESUME. Nie używamy tu timeoutu
-    // opartego na hasData(), bo brak nowych ramek nie oznacza rozłączenia pada.
     if (robot.operatingMode == OperatingMode::AUTO) {
         if (padStart && !previousPadStart) toggleAutoRunPause();
         previousPadStart = padStart;
@@ -967,7 +1051,7 @@ void processGamepad(float deltaTimeSeconds) {
 }
 
 // ============================================================
-// INICJALIZACJA
+// INICJALIZACJA SILNIKÓW / STEPPER INITIALIZATION
 // ============================================================
 bool initializeSteppers() {
     stepperEngine.init(1);
@@ -993,7 +1077,8 @@ bool initializeSteppers() {
     stepperArm2->setAcceleration(ARM2_ACCEL);
     stepperZ->setAcceleration(Z_ACCEL);
 
-    // Ręczny homing: operator ustawia robot w HOME przed włączeniem/resetem.
+    // PL: Ręczny homing: operator ustawia robota w HOME przed startem.
+    // EN: Manual homing: operator places the robot in HOME before startup.
     stepperArm1->setCurrentPosition(arm1DegreesToSteps(HOME_ARM1_DEG));
     stepperArm2->setCurrentPosition(arm2DegreesToSteps(HOME_ARM2_DEG));
     stepperZ->setCurrentPosition(zMillimetersToSteps(HOME_Z_MM));
@@ -1001,6 +1086,9 @@ bool initializeSteppers() {
     return true;
 }
 
+// ============================================================
+// SETUP / INITIAL SETUP
+// ============================================================
 void setup() {
     Serial.begin(115200);
     delay(500);
@@ -1008,10 +1096,18 @@ void setup() {
     pinMode(PIN_LED_BT, OUTPUT);
     pinMode(PIN_LED_ERROR, OUTPUT);
     pinMode(PIN_LED_STATUS, OUTPUT);
+
+    // PL: Oba przyciski na PCB podają HIGH po wciśnięciu.
+    // EN: Both PCB buttons drive the input HIGH when pressed.
     pinMode(PIN_BUTTON_TEACH, INPUT_PULLDOWN);
     pinMode(PIN_BUTTON_MODE, INPUT_PULLDOWN);
+
+    // PL: GPIO39 nie ma wewnętrznego rezystora pull-up/pull-down.
+    // EN: GPIO39 has no internal pull-up/pull-down resistor.
     pinMode(PIN_ESTOP, INPUT);
 
+    // PL: Odczyt rzeczywistego stanu zapobiega fałszywemu zboczu po starcie.
+    // EN: Reading the actual state prevents a false edge immediately after boot.
     previousTeachButton = digitalRead(PIN_BUTTON_TEACH);
     previousModeButton = digitalRead(PIN_BUTTON_MODE);
 
@@ -1076,7 +1172,12 @@ void setup() {
     lastControlMs = millis();
 }
 
+// ============================================================
+// PĘTLA GŁÓWNA / MAIN LOOP
+// ============================================================
 void loop() {
+    // PL: Bluepad32 musi być obsługiwany możliwie często.
+    // EN: Bluepad32 should be serviced as frequently as possible.
     BP32.update();
 
     updateEmergencyStop();
@@ -1088,6 +1189,9 @@ void loop() {
     if (now - lastControlMs >= CONTROL_PERIOD_MS) {
         float deltaTimeSeconds = static_cast<float>(now - lastControlMs) / 1000.0f;
         lastControlMs = now;
+
+        // PL: Ograniczenie dt chroni przed dużym skokiem zadania po chwilowym opóźnieniu.
+        // EN: Limiting dt prevents a large command jump after a temporary delay.
         deltaTimeSeconds = clampFloat(deltaTimeSeconds, 0.0f, MAX_CONTROL_DT_S);
 
         if (!robot.estopLatched) {
