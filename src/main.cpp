@@ -174,8 +174,8 @@ struct ProgramPoint {
 };
 
 struct RobotState {
-    JointPosition joints;       // pozycja zadana
-    JointPosition actualJoints; // pozycja z liczników kroków
+    JointPosition joints;
+    JointPosition actualJoints;
     CartesianPosition tcp;
     CartesianPosition actualTcp;
 
@@ -903,34 +903,39 @@ void processToolMode(float axisX, float axisY, float axisZ, float deltaTimeSecon
 
 void processGamepad(float deltaTimeSeconds) {
     ControllerPtr controller = getActiveController();
-    if (controller == nullptr) return;
 
-    const uint32_t now = millis();
-    if (controller->hasData()) lastGamepadPacketMs = now;
-
-    if (now - lastGamepadPacketMs > GAMEPAD_TIMEOUT_MS) {
-        if (robot.operatingMode == OperatingMode::AUTO) {
-            pauseAuto("Timeout pada - AUTO PAUSE");
-        } else {
-            if (robot.gamepadArmed) emergencyStopMotion();
-            robot.gamepadArmed = false;
-            gamepadNeutralSinceMs = 0;
-            digitalWrite(PIN_LED_ERROR, HIGH);
-            Serial.println("Timeout pada - MANUAL zatrzymany");
+    if (controller == nullptr) {
+        if (robot.operatingMode == OperatingMode::AUTO &&
+            (robot.autoState == AutoState::MOVE || robot.autoState == AutoState::DWELL)) {
+            pauseAuto("Brak pada - AUTO PAUSE");
         }
         return;
     }
+
+    const uint32_t now = millis();
 
     const float leftX  = normalizeJoystick(controller->axisX());
     const float leftY  = normalizeJoystick(controller->axisY());
     const float rightX = normalizeJoystick(controller->axisRX());
     const float rightY = normalizeJoystick(controller->axisRY());
-
     const bool padStart = controller->miscStart();
 
+    // W AUTO pad służy tylko do START/PAUSE/RESUME. Nie używamy tu timeoutu
+    // opartego na hasData(), bo brak nowych ramek nie oznacza rozłączenia pada.
     if (robot.operatingMode == OperatingMode::AUTO) {
         if (padStart && !previousPadStart) toggleAutoRunPause();
         previousPadStart = padStart;
+        return;
+    }
+
+    if (controller->hasData()) lastGamepadPacketMs = now;
+
+    if (now - lastGamepadPacketMs > GAMEPAD_TIMEOUT_MS) {
+        if (robot.gamepadArmed) emergencyStopMotion();
+        robot.gamepadArmed = false;
+        gamepadNeutralSinceMs = 0;
+        digitalWrite(PIN_LED_ERROR, HIGH);
+        Serial.println("Timeout pada - MANUAL zatrzymany");
         return;
     }
 
@@ -999,7 +1004,7 @@ void setup() {
     pinMode(PIN_LED_STATUS, OUTPUT);
     pinMode(PIN_BUTTON_TEACH, INPUT_PULLUP);
     pinMode(PIN_BUTTON_MODE, INPUT_PULLUP);
-    pinMode(PIN_ESTOP, INPUT); // GPIO39 nie ma wewnętrznego pull-up
+    pinMode(PIN_ESTOP, INPUT);
 
     digitalWrite(PIN_LED_BT, LOW);
     digitalWrite(PIN_LED_ERROR, LOW);
