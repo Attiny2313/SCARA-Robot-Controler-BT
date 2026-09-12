@@ -223,7 +223,7 @@ float servoRotateFilteredDeg = HOME_TOOL_ROTATE_DEG;
 float servoGripFilteredDeg = HOME_GRIP_DEG;
 
 bool previousModeButton = HIGH;
-bool previousTeachButton = HIGH;
+bool previousTeachButton = LOW;
 bool previousPadStart = false;
 
 // ============================================================
@@ -440,7 +440,7 @@ void saveProgram() {
     if (programPointCount > 0) {
         preferences.putBytes("points", programPoints,
                              sizeof(ProgramPoint) * programPointCount);
-    } else {
+    } else if (preferences.isKey("points")) {
         preferences.remove("points");
     }
 }
@@ -724,21 +724,26 @@ void updatePanelButtons() {
         toggleOperatingMode();
     }
 
-    if (previousTeachButton == HIGH && teachButton == LOW &&
+    // TEACH na płytce jest aktywny stanem HIGH.
+    if (previousTeachButton == LOW && teachButton == HIGH &&
         now - lastTeachButtonEdgeMs >= BUTTON_DEBOUNCE_MS) {
         lastTeachButtonEdgeMs = now;
         teachPressStartedMs = now;
     }
 
-    if (previousTeachButton == LOW && teachButton == HIGH &&
+    if (previousTeachButton == HIGH && teachButton == LOW &&
         now - lastTeachButtonEdgeMs >= BUTTON_DEBOUNCE_MS) {
         lastTeachButtonEdgeMs = now;
-        const uint32_t heldMs = now - teachPressStartedMs;
-        if (heldMs >= TEACH_LONG_PRESS_MS) {
-            clearProgram();
-        } else {
-            teachCurrentPoint();
+
+        if (teachPressStartedMs != 0) {
+            const uint32_t heldMs = now - teachPressStartedMs;
+            if (heldMs >= TEACH_LONG_PRESS_MS) {
+                clearProgram();
+            } else {
+                teachCurrentPoint();
+            }
         }
+
         teachPressStartedMs = 0;
     }
 
@@ -1002,9 +1007,12 @@ void setup() {
     pinMode(PIN_LED_BT, OUTPUT);
     pinMode(PIN_LED_ERROR, OUTPUT);
     pinMode(PIN_LED_STATUS, OUTPUT);
-    pinMode(PIN_BUTTON_TEACH, INPUT_PULLUP);
+    pinMode(PIN_BUTTON_TEACH, INPUT_PULLDOWN);
     pinMode(PIN_BUTTON_MODE, INPUT_PULLUP);
     pinMode(PIN_ESTOP, INPUT);
+
+    previousTeachButton = digitalRead(PIN_BUTTON_TEACH);
+    previousModeButton = digitalRead(PIN_BUTTON_MODE);
 
     digitalWrite(PIN_LED_BT, LOW);
     digitalWrite(PIN_LED_ERROR, LOW);
