@@ -67,7 +67,19 @@ Po połączeniu pada wymagane jest 300 ms neutralnych wejść przed uzbrojeniem 
 - RUN -> PAUSE,
 - PAUSED -> RESUME.
 
-Utrata pada lub timeout komunikacji podczas AUTO przełącza program w PAUSE.
+Regulacja prędkości ramion w AUTO:
+
+- D-pad góra: `+10%`,
+- D-pad dół: `-10%`,
+- D-pad lewo: powrót do `100%`,
+- zakres regulacji: `50% ... 250%`,
+- regulacja dotyczy tylko Arm 1 i Arm 2,
+- prędkość osi Z pozostaje bez zmian,
+- nowa wartość zaczyna obowiązywać od następnego punktu PTP; bieżący ruch nie jest przeliczany w locie.
+
+Bazowo oba ramiona w AUTO mają `20 deg/s`, więc przykładowo `150%` oznacza `30 deg/s`, a `200%` oznacza `40 deg/s`, o ile nie zadziała twardy limit częstotliwości STEP danej osi.
+
+Utrata pada podczas AUTO przełącza program w PAUSE.
 
 ## Cykl AUTO
 
@@ -88,6 +100,7 @@ Domyślnie program pracuje w pętli (`AUTO_LOOP_PROGRAM = true`).
 - Po E-STOP wymagany jest restart sterownika.
 - AUTO nie jest zależne od `gamepadArmed` – blokada `gamepadArmed` dotyczy wyłącznie ruchu ręcznego.
 - Do AUTO wykorzystywana jest rzeczywista pozycja liczona z `FastAccelStepper::getCurrentPosition()`.
+- Twarde limity `ARM1_MAX_STEP_HZ` i `ARM2_MAX_STEP_HZ` pozostają aktywne niezależnie od procentowego override prędkości.
 
 ## Kolejny etap
 
