@@ -83,20 +83,18 @@ constexpr float GRIP_MAX_DEG = 95.0f;
 // ============================================================
 // PRĘDKOŚCI
 // ============================================================
-// Ramię 1 pracowało poprawnie, więc zostaje przy dotychczasowej prędkości.
-// Ramię 2 ma większe przełożenie i zostało mocno spowolnione.
+// ARM1 i ARM2 mają tę samą prędkość kątową.
 constexpr float ARM1_JOG_SPEED_DEG_S = 25.0f;
-constexpr float ARM2_JOG_SPEED_DEG_S = 10.0f;
+constexpr float ARM2_JOG_SPEED_DEG_S = 25.0f;
 
-// Z: normalna praca 0.75 mm/s, absolutnie nigdy powyżej 1.0 mm/s.
-constexpr float Z_JOG_SPEED_MM_S     = 0.75f;
+// Z po poprawnym ustawieniu MS1/MS2/MS3: 1.5 mm/s.
+constexpr float Z_JOG_SPEED_MM_S     = 1.5f;
 constexpr float TOOL_XY_SPEED_MM_S   = 20.0f;
 
-// AUTO ma osobne limity osi. Dzięki temu ramię 2 i Z nie są zmuszane
-// do prędkości ramienia 1, a PTP nadal kończy ruch osi możliwie jednocześnie.
+// AUTO: oba ramiona mają tę samą prędkość kątową.
 constexpr float AUTO_ARM1_SPEED_DEG_S = 20.0f;
-constexpr float AUTO_ARM2_SPEED_DEG_S = 8.0f;
-constexpr float AUTO_Z_SPEED_MM_S     = 0.75f;
+constexpr float AUTO_ARM2_SPEED_DEG_S = 20.0f;
+constexpr float AUTO_Z_SPEED_MM_S     = 1.5f;
 
 constexpr float TOOL_ROTATE_SPEED_DEG_S = 35.0f;
 constexpr float GRIP_SPEED_DEG_S        = 45.0f;
@@ -111,8 +109,8 @@ constexpr float SERVO_FILTER_ALPHA = 0.20f;
 // od prędkości zadawanej przez JOINT / TOOL / AUTO.
 constexpr uint32_t ARM1_MAX_STEP_HZ = 10000;
 constexpr uint32_t ARM2_MAX_STEP_HZ = 3000;
-// Przy 1600 STEP/mm: 1600 Hz = dokładnie 1.0 mm/s.
-constexpr uint32_t Z_MAX_STEP_HZ    = 1600;
+// Przy 1600 STEP/mm: 2400 Hz = 1.5 mm/s.
+constexpr uint32_t Z_MAX_STEP_HZ    = 2400;
 
 constexpr uint32_t ARM1_ACCEL = 12000;
 constexpr uint32_t ARM2_ACCEL = 5000;
