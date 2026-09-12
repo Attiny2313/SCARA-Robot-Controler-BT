@@ -222,7 +222,7 @@ uint32_t teachPressStartedMs = 0;
 float servoRotateFilteredDeg = HOME_TOOL_ROTATE_DEG;
 float servoGripFilteredDeg = HOME_GRIP_DEG;
 
-bool previousModeButton = HIGH;
+bool previousModeButton = LOW;
 bool previousTeachButton = LOW;
 bool previousPadStart = false;
 
@@ -718,7 +718,8 @@ void updatePanelButtons() {
     const bool modeButton = digitalRead(PIN_BUTTON_MODE);
     const bool teachButton = digitalRead(PIN_BUTTON_TEACH);
 
-    if (previousModeButton == HIGH && modeButton == LOW &&
+    // MODE na płytce jest aktywny stanem HIGH.
+    if (previousModeButton == LOW && modeButton == HIGH &&
         now - lastModeButtonEdgeMs >= BUTTON_DEBOUNCE_MS) {
         lastModeButtonEdgeMs = now;
         toggleOperatingMode();
@@ -1008,7 +1009,7 @@ void setup() {
     pinMode(PIN_LED_ERROR, OUTPUT);
     pinMode(PIN_LED_STATUS, OUTPUT);
     pinMode(PIN_BUTTON_TEACH, INPUT_PULLDOWN);
-    pinMode(PIN_BUTTON_MODE, INPUT_PULLUP);
+    pinMode(PIN_BUTTON_MODE, INPUT_PULLDOWN);
     pinMode(PIN_ESTOP, INPUT);
 
     previousTeachButton = digitalRead(PIN_BUTTON_TEACH);
