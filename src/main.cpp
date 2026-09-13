@@ -154,9 +154,9 @@ constexpr uint32_t Z_MAX_STEP_HZ    = 2400;
 constexpr uint32_t ARM1_ACCEL = 12000;
 constexpr uint32_t ARM2_ACCEL = 5000;
 
-// PL: Bardzo łagodny start Z: 300 STEP/s² = 0.1875 mm/s² przy 1600 STEP/mm.
-// EN: Very gentle Z start: 300 STEP/s² = 0.1875 mm/s² at 1600 STEP/mm.
-constexpr uint32_t Z_ACCEL    = 300;
+// PL: Krótsza rampa Z: 3000 STEP/s² = 1.875 mm/s² przy 1600 STEP/mm.
+// EN: Shorter Z ramp: 3000 STEP/s² = 1.875 mm/s² at 1600 STEP/mm.
+constexpr uint32_t Z_ACCEL    = 3000;
 
 // ============================================================
 // CZASY I AUTO / TIMING AND AUTO SETTINGS
