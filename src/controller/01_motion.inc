@@ -13,6 +13,14 @@ uint32_t clampStepHz(float hz, uint32_t maximumHz) {
     return static_cast<uint32_t>(lroundf(hz));
 }
 
+// PL: Konwersja prędkości na częstotliwość STEP bez górnego limitu.
+//     Używane dla osi Z, aby procent prędkości AUTO faktycznie ją przyspieszał.
+// EN: Convert speed to STEP frequency without an upper software limit.
+uint32_t stepHzUnbounded(float hz) {
+    if (hz < 1.0f) return 1;
+    return static_cast<uint32_t>(lroundf(hz));
+}
+
 float degToRad(float degrees) {
     return degrees * PI / 180.0f;
 }
@@ -66,16 +74,18 @@ void setAutoArmSpeedPercent(int32_t requestedPercent) {
     if (clampedPercent == autoArmSpeedPercent) return;
 
     autoArmSpeedPercent = clampedPercent;
-    Serial.printf("AUTO SPEED ARM: %u%% (A1=%.1f deg/s, A2=%.1f deg/s)\n",
+    const float scale = autoArmSpeedScale();
+    Serial.printf("AUTO SPEED: %u%% (A1=%.1f deg/s, A2=%.1f deg/s, Z=%.2f mm/s)\n",
                   autoArmSpeedPercent,
-                  AUTO_ARM1_SPEED_DEG_S * autoArmSpeedScale(),
-                  AUTO_ARM2_SPEED_DEG_S * autoArmSpeedScale());
+                  AUTO_ARM1_SPEED_DEG_S * scale,
+                  AUTO_ARM2_SPEED_DEG_S * scale,
+                  AUTO_Z_SPEED_MM_S * scale);
 }
 
 // PL: D-pad działa na zboczu: góra +10%, dół -10%, lewo = 100%.
-//     Zmiana obowiązuje od następnego punktu PTP.
+//     Zmiana obowiązuje od następnego punktu PTP i skaluje wszystkie 3 osie.
 // EN: D-pad is edge-triggered: up +10%, down -10%, left = 100%.
-//     The new value takes effect from the next PTP point.
+//     The new value takes effect from the next PTP point and scales all 3 axes.
 void processAutoSpeedDpad(uint8_t dpad) {
     const bool upPressed = (dpad & DPAD_UP) != 0 && (previousAutoDpad & DPAD_UP) == 0;
     const bool downPressed = (dpad & DPAD_DOWN) != 0 && (previousAutoDpad & DPAD_DOWN) == 0;
@@ -196,8 +206,8 @@ void commandManualJointPosition(const JointPosition& target, float deltaTimeSeco
             ARM1_JOG_SPEED_DEG_S * STEPS_PER_DEG_ARM1, ARM1_MAX_STEP_HZ);
         const uint32_t arm2ManualMaxHz = clampStepHz(
             ARM2_JOG_SPEED_DEG_S * STEPS_PER_DEG_ARM2, ARM2_MAX_STEP_HZ);
-        const uint32_t zManualMaxHz = clampStepHz(
-            Z_JOG_SPEED_MM_S * STEPS_PER_MM_Z, Z_MAX_STEP_HZ);
+        const uint32_t zManualMaxHz = stepHzUnbounded(
+            Z_JOG_SPEED_MM_S * STEPS_PER_MM_Z);
 
         if (arm1Delta > 0.0001f) {
             stepperArm1->setSpeedInHz(clampStepHz(
@@ -208,8 +218,9 @@ void commandManualJointPosition(const JointPosition& target, float deltaTimeSeco
                 arm2Delta / deltaTimeSeconds * STEPS_PER_DEG_ARM2, arm2ManualMaxHz));
         }
         if (zDelta > 0.0001f) {
-            stepperZ->setSpeedInHz(clampStepHz(
-                zDelta / deltaTimeSeconds * STEPS_PER_MM_Z, zManualMaxHz));
+            stepperZ->setSpeedInHz(stepHzUnbounded(
+                fminf(zDelta / deltaTimeSeconds * STEPS_PER_MM_Z,
+                      static_cast<float>(zManualMaxHz))));
         }
     }
 
@@ -221,10 +232,10 @@ void commandManualJointPosition(const JointPosition& target, float deltaTimeSeco
     robot.tcp = forwardKinematics(robot.joints);
 }
 
-// PL: AUTO wykonuje ruch PTP. Prędkości osi są skalowane tak, aby w przybliżeniu
-//     zakończyć ruch w tym samym czasie; przyspieszenia pozostają niezależne.
-// EN: AUTO performs PTP motion. Axis speeds are scaled so the axes finish at
-//     approximately the same time; acceleration profiles remain independent.
+// PL: AUTO wykonuje ruch PTP. Ten sam procent prędkości skaluje ARM1, ARM2 i Z.
+//     Z nie ma już programowego górnego limitu częstotliwości STEP.
+// EN: AUTO performs PTP motion. The same speed percentage scales ARM1, ARM2 and Z.
+//     Z no longer has a software upper STEP-frequency limit.
 void commandAutoJointPosition(const JointPosition& target) {
     if (robot.estopLatched || robot.operatingMode != OperatingMode::AUTO) return;
 
@@ -235,13 +246,14 @@ void commandAutoJointPosition(const JointPosition& target) {
     const float d2 = fabsf(clamped.arm2Deg - robot.actualJoints.arm2Deg);
     const float dz = fabsf(clamped.zMm - robot.actualJoints.zMm);
 
-    const float armScale = autoArmSpeedScale();
-    const float arm1AutoSpeed = AUTO_ARM1_SPEED_DEG_S * armScale;
-    const float arm2AutoSpeed = AUTO_ARM2_SPEED_DEG_S * armScale;
+    const float speedScale = autoArmSpeedScale();
+    const float arm1AutoSpeed = AUTO_ARM1_SPEED_DEG_S * speedScale;
+    const float arm2AutoSpeed = AUTO_ARM2_SPEED_DEG_S * speedScale;
+    const float zAutoSpeed = AUTO_Z_SPEED_MM_S * speedScale;
 
     const float t1 = d1 / arm1AutoSpeed;
     const float t2 = d2 / arm2AutoSpeed;
-    const float tz = dz / AUTO_Z_SPEED_MM_S;
+    const float tz = dz / zAutoSpeed;
     const float moveTime = fmaxf(0.01f, fmaxf(t1, fmaxf(t2, tz)));
 
     if (d1 > 0.001f) {
@@ -253,8 +265,8 @@ void commandAutoJointPosition(const JointPosition& target) {
             d2 / moveTime * STEPS_PER_DEG_ARM2, ARM2_MAX_STEP_HZ));
     }
     if (dz > 0.001f) {
-        stepperZ->setSpeedInHz(clampStepHz(
-            dz / moveTime * STEPS_PER_MM_Z, Z_MAX_STEP_HZ));
+        stepperZ->setSpeedInHz(stepHzUnbounded(
+            dz / moveTime * STEPS_PER_MM_Z));
     }
 
     stepperArm1->moveTo(arm1DegreesToSteps(clamped.arm1Deg));
@@ -264,4 +276,3 @@ void commandAutoJointPosition(const JointPosition& target) {
     robot.joints = clamped;
     robot.tcp = forwardKinematics(robot.joints);
 }
-
