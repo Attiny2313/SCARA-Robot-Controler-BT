@@ -7,16 +7,10 @@ float clampFloat(float value, float minimum, float maximum) {
     return value;
 }
 
-uint32_t clampStepHz(float hz, uint32_t maximumHz) {
-    if (hz < 1.0f) return 1;
-    if (hz > static_cast<float>(maximumHz)) return maximumHz;
-    return static_cast<uint32_t>(lroundf(hz));
-}
-
 // PL: Konwersja prędkości na częstotliwość STEP bez górnego limitu.
-//     Używane dla osi Z, aby procent prędkości AUTO faktycznie ją przyspieszał.
+//     Prędkość wynika z zadanych wartości osi oraz procentu AUTO.
 // EN: Convert speed to STEP frequency without an upper software limit.
-uint32_t stepHzUnbounded(float hz) {
+uint32_t stepHz(float hz) {
     if (hz < 1.0f) return 1;
     return static_cast<uint32_t>(lroundf(hz));
 }
@@ -202,25 +196,27 @@ void commandManualJointPosition(const JointPosition& target, float deltaTimeSeco
         const float arm2Delta = fabsf(clamped.arm2Deg - robot.joints.arm2Deg);
         const float zDelta = fabsf(clamped.zMm - robot.joints.zMm);
 
-        const uint32_t arm1ManualMaxHz = clampStepHz(
-            ARM1_JOG_SPEED_DEG_S * STEPS_PER_DEG_ARM1, ARM1_MAX_STEP_HZ);
-        const uint32_t arm2ManualMaxHz = clampStepHz(
-            ARM2_JOG_SPEED_DEG_S * STEPS_PER_DEG_ARM2, ARM2_MAX_STEP_HZ);
-        const uint32_t zManualMaxHz = stepHzUnbounded(
+        const uint32_t arm1ManualMaxHz = stepHz(
+            ARM1_JOG_SPEED_DEG_S * STEPS_PER_DEG_ARM1);
+        const uint32_t arm2ManualMaxHz = stepHz(
+            ARM2_JOG_SPEED_DEG_S * STEPS_PER_DEG_ARM2);
+        const uint32_t zManualMaxHz = stepHz(
             Z_JOG_SPEED_MM_S * STEPS_PER_MM_Z);
 
         if (arm1Delta > 0.0001f) {
-            stepperArm1->setSpeedInHz(clampStepHz(
-                arm1Delta / deltaTimeSeconds * STEPS_PER_DEG_ARM1, arm1ManualMaxHz));
+            stepperArm1->setSpeedInHz(stepHz(fminf(
+                arm1Delta / deltaTimeSeconds * STEPS_PER_DEG_ARM1,
+                static_cast<float>(arm1ManualMaxHz))));
         }
         if (arm2Delta > 0.0001f) {
-            stepperArm2->setSpeedInHz(clampStepHz(
-                arm2Delta / deltaTimeSeconds * STEPS_PER_DEG_ARM2, arm2ManualMaxHz));
+            stepperArm2->setSpeedInHz(stepHz(fminf(
+                arm2Delta / deltaTimeSeconds * STEPS_PER_DEG_ARM2,
+                static_cast<float>(arm2ManualMaxHz))));
         }
         if (zDelta > 0.0001f) {
-            stepperZ->setSpeedInHz(stepHzUnbounded(
-                fminf(zDelta / deltaTimeSeconds * STEPS_PER_MM_Z,
-                      static_cast<float>(zManualMaxHz))));
+            stepperZ->setSpeedInHz(stepHz(fminf(
+                zDelta / deltaTimeSeconds * STEPS_PER_MM_Z,
+                static_cast<float>(zManualMaxHz))));
         }
     }
 
@@ -233,9 +229,9 @@ void commandManualJointPosition(const JointPosition& target, float deltaTimeSeco
 }
 
 // PL: AUTO wykonuje ruch PTP. Ten sam procent prędkości skaluje ARM1, ARM2 i Z.
-//     Z nie ma już programowego górnego limitu częstotliwości STEP.
+//     Brak dodatkowych programowych limitów częstotliwości STEP.
 // EN: AUTO performs PTP motion. The same speed percentage scales ARM1, ARM2 and Z.
-//     Z no longer has a software upper STEP-frequency limit.
+//     There are no additional software STEP-frequency caps.
 void commandAutoJointPosition(const JointPosition& target) {
     if (robot.estopLatched || robot.operatingMode != OperatingMode::AUTO) return;
 
@@ -257,15 +253,15 @@ void commandAutoJointPosition(const JointPosition& target) {
     const float moveTime = fmaxf(0.01f, fmaxf(t1, fmaxf(t2, tz)));
 
     if (d1 > 0.001f) {
-        stepperArm1->setSpeedInHz(clampStepHz(
-            d1 / moveTime * STEPS_PER_DEG_ARM1, ARM1_MAX_STEP_HZ));
+        stepperArm1->setSpeedInHz(stepHz(
+            d1 / moveTime * STEPS_PER_DEG_ARM1));
     }
     if (d2 > 0.001f) {
-        stepperArm2->setSpeedInHz(clampStepHz(
-            d2 / moveTime * STEPS_PER_DEG_ARM2, ARM2_MAX_STEP_HZ));
+        stepperArm2->setSpeedInHz(stepHz(
+            d2 / moveTime * STEPS_PER_DEG_ARM2));
     }
     if (dz > 0.001f) {
-        stepperZ->setSpeedInHz(stepHzUnbounded(
+        stepperZ->setSpeedInHz(stepHz(
             dz / moveTime * STEPS_PER_MM_Z));
     }
 
