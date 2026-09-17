@@ -97,6 +97,14 @@ const char* autoStateShortName() {
     return "?";
 }
 
+void oledPrintFloatOrErr(float value, uint8_t decimals) {
+    if (isfinite(value)) {
+        display.print(value, decimals);
+    } else {
+        display.print("ERR");
+    }
+}
+
 void refreshDisplay() {
     if (!displayAvailable) return;
 
@@ -108,8 +116,14 @@ void refreshDisplay() {
     display.setTextColor(SSD1306_WHITE);
     display.setTextSize(1);
 
+    const bool numericOk = jointPositionFinite(robot.actualJoints) &&
+                           cartesianPositionFinite(robot.actualTcp) &&
+                           jointPositionFinite(robot.joints);
+
     display.setCursor(0, 0);
-    if (robot.estopLatched) {
+    if (!numericOk) {
+        display.print("SCARA  NUM ERR");
+    } else if (robot.estopLatched) {
         display.print("SCARA  E-STOP");
     } else if (robot.operatingMode == OperatingMode::AUTO) {
         display.print("AUTO  ");
@@ -132,34 +146,35 @@ void refreshDisplay() {
 
     display.setCursor(0, 20);
     display.print("A1:");
-    display.print(robot.actualJoints.arm1Deg, 1);
+    oledPrintFloatOrErr(robot.actualJoints.arm1Deg, 1);
     display.print(" deg");
 
     display.setCursor(0, 30);
     display.print("A2:");
-    display.print(robot.actualJoints.arm2Deg, 1);
+    oledPrintFloatOrErr(robot.actualJoints.arm2Deg, 1);
     display.print(" deg");
 
     display.setCursor(0, 40);
     display.print("Z :");
-    display.print(robot.actualJoints.zMm, 1);
+    oledPrintFloatOrErr(robot.actualJoints.zMm, 1);
     display.print(" mm");
 
     display.setCursor(0, 50);
-    if (robot.operatingMode == OperatingMode::AUTO && programPointCount > 0) {
+    if (!numericOk) {
+        display.print("Sprawdz Serial");
+    } else if (robot.operatingMode == OperatingMode::AUTO && programPointCount > 0) {
         display.print("P:");
         display.print(currentProgramPoint + 1);
         display.print('/');
         display.print(programPointCount);
         display.print(" ROT:");
-        display.print(robot.toolRotateDeg, 0);
+        oledPrintFloatOrErr(robot.toolRotateDeg, 0);
     } else {
         display.print("X:");
-        display.print(robot.actualTcp.xMm, 0);
+        oledPrintFloatOrErr(robot.actualTcp.xMm, 0);
         display.print(" Y:");
-        display.print(robot.actualTcp.yMm, 0);
+        oledPrintFloatOrErr(robot.actualTcp.yMm, 0);
     }
 
     display.display();
 }
-
