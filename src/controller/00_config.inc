@@ -28,10 +28,9 @@ constexpr uint8_t PIN_LED_BT       = 4;
 constexpr uint8_t PIN_LED_ERROR    = 16;
 constexpr uint8_t PIN_LED_STATUS   = 17;
 
-// PL: Objaw na obecnej płytce wskazuje na sterowanie LED BT stanem niskim.
-//     Jeśli LED zachowuje się odwrotnie, zmień BT_LED_ACTIVE_LOW na false.
-// EN: The current board symptom suggests an active-low BT LED.
-constexpr bool BT_LED_ACTIVE_LOW = true;
+// PL: Dioda BT na obecnej płytce jest sterowana aktywnym stanem wysokim.
+// EN: The BT LED on the current board is active-high.
+constexpr bool BT_LED_ACTIVE_LOW = false;
 constexpr uint32_t BT_LED_BLINK_MS = 500;
 
 constexpr uint8_t PIN_I2C_SDA = 21;
@@ -82,7 +81,7 @@ constexpr float GEAR_Z          = 1.0f;
 // EN: Axis sign allows logical direction reversal without rewiring the motor.
 constexpr int8_t SIGN_ARM1 = 1;
 constexpr int8_t SIGN_ARM2 = 1;
-constexpr int8_t SIGN_Z    = 1;
+constexpr int8_t SIGN_Z    = -1;
 
 constexpr float STEPS_PER_DEG_ARM1 =
     MOTOR_STEPS_REV * MICROSTEPS * GEAR_ARM1 / 360.0f;
