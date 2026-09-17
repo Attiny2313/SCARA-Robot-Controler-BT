@@ -12,6 +12,7 @@ void toggleControlMode() {
 
 // PL: MODE przełącza wyłącznie przy zatrzymanych osiach.
 // EN: MODE can only be changed while all axes are stopped.
+// UA: MODE можна перемикати лише тоді, коли всі осі зупинені.
 void toggleOperatingMode() {
     if (robot.estopLatched) return;
     if (axesRunning()) {
@@ -72,6 +73,8 @@ void printCurrentPosition() {
 //     TEACH: krótkie naciśnięcie zapisuje punkt, długie kasuje program.
 // EN: Both panel buttons are active HIGH and use INPUT_PULLDOWN.
 //     TEACH: short press stores a point, long press clears the program.
+// UA: Обидві кнопки панелі активні рівнем HIGH і використовують INPUT_PULLDOWN.
+//     TEACH: коротке натискання зберігає точку, довге очищає програму.
 void updatePanelButtons() {
     const uint32_t now = millis();
     const bool modeButton = digitalRead(PIN_BUTTON_MODE);
@@ -141,6 +144,7 @@ void updateControllerConnectedFlag() {
 
 // PL: Połączony pad = światło ciągłe. Brak pada = miganie co 500 ms.
 // EN: Connected controller = steady LED. No controller = 500 ms blink.
+// UA: Підключений геймпад = постійне світіння. Немає геймпада = миготіння кожні 500 мс.
 void updateBluetoothLed() {
     const bool connectedNow = getActiveController() != nullptr;
     robot.controllerConnected = connectedNow;
@@ -175,6 +179,7 @@ void onConnectedController(ControllerPtr controller) {
 
 // PL: Rozłączenie pada w AUTO zatrzymuje cykl przez PAUSE.
 // EN: Gamepad disconnection during AUTO pauses the cycle.
+// UA: Відключення геймпада в AUTO переводить цикл у PAUSE.
 void onDisconnectedController(ControllerPtr controller) {
     for (int i = 0; i < BP32_MAX_GAMEPADS; i++) {
         if (controllers[i] == controller) controllers[i] = nullptr;
@@ -202,6 +207,8 @@ bool gamepadControlsNeutral(float leftX, float leftY, float rightX, float rightY
 //     Zapobiega to przypadkowemu ruchowi tuż po sparowaniu.
 // EN: After connection the gamepad must remain neutral briefly.
 //     This prevents unintended motion immediately after pairing.
+// UA: Після підключення геймпад повинен короткий час залишатися в нейтральному стані.
+//     Це запобігає випадковому руху одразу після спарювання.
 bool updateGamepadArming(float leftX, float leftY, float rightX, float rightY,
                          ControllerPtr controller) {
     if (robot.operatingMode != OperatingMode::MANUAL) return false;
