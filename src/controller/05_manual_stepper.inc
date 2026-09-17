@@ -3,6 +3,7 @@
 // ============================================================
 // PL: JOINT steruje osiami bezpośrednio: ARM1, ARM2 i Z.
 // EN: JOINT directly controls the ARM1, ARM2 and Z axes.
+// UA: JOINT безпосередньо керує осями ARM1, ARM2 і Z.
 void processJointMode(float axisX, float axisY, float axisZ, float deltaTimeSeconds) {
     JointPosition target = robot.joints;
     target.arm1Deg += axisX * ARM1_JOG_SPEED_DEG_S * deltaTimeSeconds;
@@ -13,6 +14,7 @@ void processJointMode(float axisX, float axisY, float axisZ, float deltaTimeSeco
 
 // PL: TOOL steruje TCP w X/Y; kąty ramion są obliczane przez IK.
 // EN: TOOL controls TCP in X/Y; joint angles are calculated by IK.
+// UA: TOOL керує TCP у X/Y; кути ланок обчислюються за допомогою IK.
 void processToolMode(float axisX, float axisY, float axisZ, float deltaTimeSeconds) {
     CartesianPosition desired = robot.tcp;
     desired.xMm += axisX * TOOL_XY_SPEED_MM_S * deltaTimeSeconds;
@@ -37,6 +39,9 @@ void processToolMode(float axisX, float axisY, float axisZ, float deltaTimeSecon
 //     Timeout hasData() jest używany tylko w MANUAL; brak nowych ramek nie
 //     oznacza rozłączenia kontrolera podczas programu automatycznego.
 // EN: In AUTO the gamepad is used for START/PAUSE/RESUME and motion speed override.
+// UA: В AUTO геймпад використовується для START/PAUSE/RESUME та регулювання швидкості руху.
+//     Тайм-аут hasData() використовується лише в MANUAL; відсутність нових пакетів
+//     не означає відключення контролера під час виконання автоматичної програми.
 void processGamepad(float deltaTimeSeconds) {
     ControllerPtr controller = getActiveController();
 
@@ -64,8 +69,10 @@ void processGamepad(float deltaTimeSeconds) {
         return;
     }
 
-    // Zapamiętuj D-pad także w MANUAL, aby przejście do AUTO z przytrzymanym
-    // kierunkiem nie zostało odczytane jako nowe naciśnięcie.
+    // PL: Zapamiętuj D-pad także w MANUAL, aby przejście do AUTO z przytrzymanym
+    //     kierunkiem nie zostało odczytane jako nowe naciśnięcie.
+    // UA: Запам'ятовуй D-pad також у MANUAL, щоб перехід до AUTO з утримуваним
+    //     напрямком не був розпізнаний як нове натискання.
     previousAutoDpad = dpad;
 
     if (controller->hasData()) lastGamepadPacketMs = now;
@@ -129,6 +136,7 @@ bool initializeSteppers() {
 
     // PL: Ręczny homing: operator ustawia robota w HOME przed startem.
     // EN: Manual homing: operator places the robot in HOME before startup.
+    // UA: Ручне встановлення HOME: оператор встановлює робота в HOME перед запуском.
     stepperArm1->setCurrentPosition(arm1DegreesToSteps(HOME_ARM1_DEG));
     stepperArm2->setCurrentPosition(arm2DegreesToSteps(HOME_ARM2_DEG));
     stepperZ->setCurrentPosition(zMillimetersToSteps(HOME_Z_MM));
