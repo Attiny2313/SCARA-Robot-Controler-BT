@@ -11,6 +11,7 @@ bool programPointValid(const ProgramPoint& p) {
 
 // PL: Program jest zapisywany w pamięci NVS ESP32 i pozostaje po restarcie.
 // EN: The taught program is stored in ESP32 NVS and survives a restart.
+// UA: Навчена програма зберігається в NVS ESP32 і залишається після перезапуску.
 void saveProgram() {
     preferences.putUChar("count", programPointCount);
     if (programPointCount > 0) {
@@ -60,6 +61,7 @@ void clearProgram() {
 
 // PL: Punkt można zapisać tylko w MANUAL i po całkowitym zatrzymaniu osi.
 // EN: A point can only be taught in MANUAL and after all axes have stopped.
+// UA: Точку можна записати лише в режимі MANUAL і після повної зупинки всіх осей.
 void teachCurrentPoint() {
     if (robot.estopLatched || robot.operatingMode != OperatingMode::MANUAL) return;
     if (axesRunning()) {
@@ -112,6 +114,8 @@ void setAutoFault(const char* reason) {
 //     dzięki czemu wznowienie startuje z faktycznej pozycji robota.
 // EN: Pause stops the axes and synchronizes the commanded position with the
 //     step counters so resume starts from the robot's actual position.
+// UA: Пауза зупиняє осі та синхронізує задане положення з лічильниками кроків,
+//     тому після відновлення рух починається з фактичного положення робота.
 void pauseAuto(const char* reason) {
     if (robot.operatingMode != OperatingMode::AUTO) return;
     if (robot.autoState == AutoState::IDLE ||
@@ -207,6 +211,7 @@ void startCurrentProgramPoint() {
 
 // PL: Maszyna stanów AUTO: ruch -> postój -> kolejny punkt.
 // EN: AUTO state machine: move -> dwell -> next point.
+// UA: Автомат станів AUTO: рух -> пауза -> наступна точка.
 void processAuto() {
     if (robot.operatingMode != OperatingMode::AUTO || robot.estopLatched) return;
 
@@ -258,6 +263,7 @@ void processAuto() {
 // ============================================================
 // PL: E-STOP jest zatrzaskiwany programowo. Po aktywacji wymagany jest restart.
 // EN: E-STOP is latched in software. A restart is required after activation.
+// UA: E-STOP фіксується програмно. Після спрацювання потрібен перезапуск контролера.
 void updateEmergencyStop() {
     const bool estopActive = digitalRead(PIN_ESTOP) == HIGH;
 
