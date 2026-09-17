@@ -20,6 +20,7 @@ void updateServoTargets(float rotateCommand, float gripCommand, float deltaTimeS
 
 // PL: Prosty filtr pierwszego rzędu wygładza skokowe zmiany zadania serw.
 // EN: A simple first-order filter smooths abrupt servo target changes.
+// UA: Простий фільтр першого порядку згладжує різкі зміни заданого положення сервоприводів.
 void refreshServos() {
     if (robot.estopLatched) return;
 
