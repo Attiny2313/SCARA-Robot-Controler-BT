@@ -11,8 +11,16 @@ float clampFloat(float value, float minimum, float maximum) {
 //     Prędkość wynika z zadanych wartości osi oraz procentu AUTO.
 // EN: Convert speed to STEP frequency without an upper software limit.
 uint32_t stepHz(float hz) {
-    if (hz < 1.0f) return 1;
+    if (!isfinite(hz) || hz < 1.0f) return 1;
     return static_cast<uint32_t>(lroundf(hz));
+}
+
+bool jointPositionFinite(const JointPosition& p) {
+    return isfinite(p.arm1Deg) && isfinite(p.arm2Deg) && isfinite(p.zMm);
+}
+
+bool cartesianPositionFinite(const CartesianPosition& p) {
+    return isfinite(p.xMm) && isfinite(p.yMm) && isfinite(p.zMm);
 }
 
 float degToRad(float degrees) {
@@ -32,14 +40,17 @@ float normalizeJoystick(int32_t value) {
 }
 
 int32_t arm1DegreesToSteps(float angleDeg) {
+    if (!isfinite(angleDeg)) return 0;
     return lroundf(angleDeg * STEPS_PER_DEG_ARM1 * SIGN_ARM1);
 }
 
 int32_t arm2DegreesToSteps(float angleDeg) {
+    if (!isfinite(angleDeg)) return 0;
     return lroundf(angleDeg * STEPS_PER_DEG_ARM2 * SIGN_ARM2);
 }
 
 int32_t zMillimetersToSteps(float zMm) {
+    if (!isfinite(zMm)) return 0;
     return lroundf(zMm * STEPS_PER_MM_Z * SIGN_Z);
 }
 
@@ -102,6 +113,8 @@ void processAutoSpeedDpad(uint8_t dpad) {
 // PL: Kinematyka prosta: kąty obu ramion -> pozycja TCP X/Y/Z.
 // EN: Forward kinematics: arm angles -> TCP position X/Y/Z.
 CartesianPosition forwardKinematics(const JointPosition& joints) {
+    if (!jointPositionFinite(joints)) return {NAN, NAN, NAN};
+
     const float theta1 = degToRad(joints.arm1Deg);
     const float theta2 = degToRad(joints.arm2Deg);
 
@@ -119,16 +132,18 @@ CartesianPosition forwardKinematics(const JointPosition& joints) {
 // EN: Inverse kinematics for the XY plane. elbowUp selects one of the two
 //     geometrically possible arm configurations.
 bool inverseKinematics(float xMm, float yMm, bool elbowUp, JointPosition& result) {
+    if (!isfinite(xMm) || !isfinite(yMm)) return false;
+
     const float radiusSquared = xMm * xMm + yMm * yMm;
     float cosTheta2 =
         (radiusSquared - ARM_LENGTH_1_MM * ARM_LENGTH_1_MM -
          ARM_LENGTH_2_MM * ARM_LENGTH_2_MM) /
         (2.0f * ARM_LENGTH_1_MM * ARM_LENGTH_2_MM);
 
-    if (cosTheta2 < -1.0f || cosTheta2 > 1.0f) return false;
+    if (!isfinite(cosTheta2) || cosTheta2 < -1.0f || cosTheta2 > 1.0f) return false;
 
     cosTheta2 = clampFloat(cosTheta2, -1.0f, 1.0f);
-    float sinTheta2 = sqrtf(1.0f - cosTheta2 * cosTheta2);
+    float sinTheta2 = sqrtf(fmaxf(0.0f, 1.0f - cosTheta2 * cosTheta2));
     if (!elbowUp) sinTheta2 = -sinTheta2;
 
     const float theta2 = atan2f(sinTheta2, cosTheta2);
@@ -140,7 +155,8 @@ bool inverseKinematics(float xMm, float yMm, bool elbowUp, JointPosition& result
     result.arm2Deg = radToDeg(theta2);
     result.zMm = robot.joints.zMm;
 
-    return !(result.arm1Deg < ARM1_MIN_DEG || result.arm1Deg > ARM1_MAX_DEG ||
+    return jointPositionFinite(result) &&
+           !(result.arm1Deg < ARM1_MIN_DEG || result.arm1Deg > ARM1_MAX_DEG ||
              result.arm2Deg < ARM2_MIN_DEG || result.arm2Deg > ARM2_MAX_DEG);
 }
 
@@ -152,9 +168,20 @@ bool inverseKinematics(float xMm, float yMm, bool elbowUp, JointPosition& result
 void updateActualRobotPosition() {
     if (stepperArm1 == nullptr || stepperArm2 == nullptr || stepperZ == nullptr) return;
 
-    robot.actualJoints.arm1Deg = arm1StepsToDegrees(stepperArm1->getCurrentPosition());
-    robot.actualJoints.arm2Deg = arm2StepsToDegrees(stepperArm2->getCurrentPosition());
-    robot.actualJoints.zMm = zStepsToMillimeters(stepperZ->getCurrentPosition());
+    JointPosition measured;
+    measured.arm1Deg = arm1StepsToDegrees(stepperArm1->getCurrentPosition());
+    measured.arm2Deg = arm2StepsToDegrees(stepperArm2->getCurrentPosition());
+    measured.zMm = zStepsToMillimeters(stepperZ->getCurrentPosition());
+
+    if (!jointPositionFinite(measured)) {
+        Serial.printf("NUMERIC ERROR ACT: raw A1=%ld A2=%ld Z=%ld\n",
+                      static_cast<long>(stepperArm1->getCurrentPosition()),
+                      static_cast<long>(stepperArm2->getCurrentPosition()),
+                      static_cast<long>(stepperZ->getCurrentPosition()));
+        return;
+    }
+
+    robot.actualJoints = measured;
     robot.actualTcp = forwardKinematics(robot.actualJoints);
 }
 
@@ -168,6 +195,7 @@ bool motionFinished() {
 }
 
 JointPosition clampJointPosition(const JointPosition& target) {
+    if (!jointPositionFinite(target)) return robot.actualJoints;
     return {
         clampFloat(target.arm1Deg, ARM1_MIN_DEG, ARM1_MAX_DEG),
         clampFloat(target.arm2Deg, ARM2_MIN_DEG, ARM2_MAX_DEG),
@@ -188,6 +216,16 @@ void emergencyStopMotion() {
 void commandManualJointPosition(const JointPosition& target, float deltaTimeSeconds) {
     if (robot.estopLatched || !robot.gamepadArmed ||
         robot.operatingMode != OperatingMode::MANUAL) return;
+
+    if (!jointPositionFinite(target)) {
+        updateActualRobotPosition();
+        if (jointPositionFinite(robot.actualJoints)) {
+            robot.joints = robot.actualJoints;
+            robot.tcp = robot.actualTcp;
+        }
+        Serial.println("NUMERIC ERROR MANUAL: target NaN/Inf, resync z pozycji krokow");
+        return;
+    }
 
     const JointPosition clamped = clampJointPosition(target);
 
@@ -235,7 +273,14 @@ void commandManualJointPosition(const JointPosition& target, float deltaTimeSeco
 void commandAutoJointPosition(const JointPosition& target) {
     if (robot.estopLatched || robot.operatingMode != OperatingMode::AUTO) return;
 
+    if (!jointPositionFinite(target)) {
+        Serial.println("NUMERIC ERROR AUTO: punkt zawiera NaN/Inf");
+        return;
+    }
+
     updateActualRobotPosition();
+    if (!jointPositionFinite(robot.actualJoints)) return;
+
     const JointPosition clamped = clampJointPosition(target);
 
     const float d1 = fabsf(clamped.arm1Deg - robot.actualJoints.arm1Deg);
@@ -251,6 +296,11 @@ void commandAutoJointPosition(const JointPosition& target) {
     const float t2 = d2 / arm2AutoSpeed;
     const float tz = dz / zAutoSpeed;
     const float moveTime = fmaxf(0.01f, fmaxf(t1, fmaxf(t2, tz)));
+
+    if (!isfinite(moveTime)) {
+        Serial.println("NUMERIC ERROR AUTO: nieprawidlowy czas ruchu");
+        return;
+    }
 
     if (d1 > 0.001f) {
         stepperArm1->setSpeedInHz(stepHz(
