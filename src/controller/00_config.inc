@@ -128,16 +128,16 @@ constexpr float GRIP_MAX_DEG = 95.0f;
 constexpr float ARM1_JOG_SPEED_DEG_S = 25.0f;
 constexpr float ARM2_JOG_SPEED_DEG_S = 25.0f;
 
-// PL: Prędkość osi Z w sterowaniu ręcznym.
-// EN: Z-axis speed in manual control.
-constexpr float Z_JOG_SPEED_MM_S     = 1.5f;
+// PL: Oś Z ma podniesioną prędkość bazową do 3 mm/s.
+// EN: Z-axis base speed is raised to 3 mm/s.
+constexpr float Z_JOG_SPEED_MM_S     = 3.0f;
 constexpr float TOOL_XY_SPEED_MM_S   = 20.0f;
 
 // PL: Bazowe prędkości programu automatycznego.
 // EN: Base speeds used by the automatic program.
 constexpr float AUTO_ARM1_SPEED_DEG_S = 20.0f;
 constexpr float AUTO_ARM2_SPEED_DEG_S = 20.0f;
-constexpr float AUTO_Z_SPEED_MM_S     = 1.5f;
+constexpr float AUTO_Z_SPEED_MM_S     = 3.0f;
 
 // PL: Override prędkości AUTO skaluje wszystkie trzy osie. D-pad góra/dół
 //     zmienia wartość o 10%, a D-pad lewo przywraca 100%.
