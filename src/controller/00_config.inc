@@ -128,8 +128,8 @@ constexpr float GRIP_MAX_DEG = 95.0f;
 constexpr float ARM1_JOG_SPEED_DEG_S = 25.0f;
 constexpr float ARM2_JOG_SPEED_DEG_S = 25.0f;
 
-// PL: Prędkość osi Z po prawidłowym ustawieniu MS1/MS2/MS3.
-// EN: Z-axis speed with MS1/MS2/MS3 configured correctly.
+// PL: Prędkość osi Z w sterowaniu ręcznym.
+// EN: Z-axis speed in manual control.
 constexpr float Z_JOG_SPEED_MM_S     = 1.5f;
 constexpr float TOOL_XY_SPEED_MM_S   = 20.0f;
 
@@ -139,10 +139,10 @@ constexpr float AUTO_ARM1_SPEED_DEG_S = 20.0f;
 constexpr float AUTO_ARM2_SPEED_DEG_S = 20.0f;
 constexpr float AUTO_Z_SPEED_MM_S     = 1.5f;
 
-// PL: Override prędkości AUTO dotyczy ramion. D-pad góra/dół zmienia
-//     wartość o 10%, a D-pad lewo przywraca 100%. Oś Z pozostaje bez zmian.
-// EN: AUTO speed override affects the arms. D-pad up/down changes it
-//     by 10%, while D-pad left restores 100%. Z speed remains unchanged.
+// PL: Override prędkości AUTO skaluje wszystkie trzy osie. D-pad góra/dół
+//     zmienia wartość o 10%, a D-pad lewo przywraca 100%.
+// EN: AUTO speed override scales all three axes. D-pad up/down changes it
+//     by 10%, while D-pad left restores 100%.
 constexpr uint16_t AUTO_ARM_SPEED_PERCENT_DEFAULT = 100;
 constexpr uint16_t AUTO_ARM_SPEED_PERCENT_MIN     = 50;
 constexpr uint16_t AUTO_ARM_SPEED_PERCENT_MAX     = 250;
@@ -157,16 +157,9 @@ constexpr int SERVO_GRIP_MIN_US   = 500;
 constexpr int SERVO_GRIP_MAX_US   = 2500;
 constexpr float SERVO_FILTER_ALPHA = 0.20f;
 
-// PL: Twarde limity częstotliwości STEP są dodatkowym zabezpieczeniem,
-//     niezależnym od prędkości zadawanej przez JOINT, TOOL lub AUTO.
-// EN: Hard STEP frequency limits provide an additional safety layer,
-//     independent of speeds requested by JOINT, TOOL or AUTO control.
-constexpr uint32_t ARM1_MAX_STEP_HZ = 10000;
-constexpr uint32_t ARM2_MAX_STEP_HZ = 10000;
-
-// PL: Przy 1600 STEP/mm: 2400 Hz = 1.5 mm/s.
-// EN: At 1600 STEP/mm: 2400 Hz = 1.5 mm/s.
-constexpr uint32_t Z_MAX_STEP_HZ    = 2400;
+// PL: Nie stosujemy dodatkowych twardych limitów częstotliwości STEP.
+//     Częstotliwość wynika z zadanych prędkości i procentu AUTO.
+// EN: No additional hard STEP-frequency caps are applied.
 
 constexpr uint32_t ARM1_ACCEL = 12000;
 constexpr uint32_t ARM2_ACCEL = 5000;
@@ -296,4 +289,3 @@ uint8_t displayI2cAddress = 0;
 bool previousModeButton = LOW;
 bool previousTeachButton = LOW;
 bool previousPadStart = false;
-
