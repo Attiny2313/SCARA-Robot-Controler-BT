@@ -11,19 +11,23 @@ void setup() {
 
     // PL: Oba przyciski na PCB podają HIGH po wciśnięciu.
     // EN: Both PCB buttons drive the input HIGH when pressed.
+    // UA: Обидві кнопки на PCB подають HIGH після натискання.
     pinMode(PIN_BUTTON_TEACH, INPUT_PULLDOWN);
     pinMode(PIN_BUTTON_MODE, INPUT_PULLDOWN);
 
     // PL: GPIO39 nie ma wewnętrznego rezystora pull-up/pull-down.
     // EN: GPIO39 has no internal pull-up/pull-down resistor.
+    // UA: GPIO39 не має внутрішнього резистора pull-up/pull-down.
     pinMode(PIN_ESTOP, INPUT);
 
     // PL: Odczyt rzeczywistego stanu zapobiega fałszywemu zboczu po starcie.
     // EN: Reading the actual state prevents a false edge immediately after boot.
+    // UA: Зчитування фактичного стану запобігає хибному фронту одразу після запуску.
     previousTeachButton = digitalRead(PIN_BUTTON_TEACH);
     previousModeButton = digitalRead(PIN_BUTTON_MODE);
 
-    // BT LED startuje w stanie zgaszonym; updateBluetoothLed() rozpocznie miganie.
+    // PL: BT LED startuje w stanie zgaszonym; updateBluetoothLed() rozpocznie miganie.
+    // UA: BT LED стартує вимкненим; updateBluetoothLed() запустить миготіння.
     digitalWrite(PIN_LED_BT, BT_LED_ACTIVE_LOW ? HIGH : LOW);
     digitalWrite(PIN_LED_ERROR, LOW);
     digitalWrite(PIN_LED_STATUS, LOW);
@@ -95,6 +99,7 @@ void setup() {
 void loop() {
     // PL: Bluepad32 musi być obsługiwany możliwie często.
     // EN: Bluepad32 should be serviced as frequently as possible.
+    // UA: Bluepad32 потрібно обслуговувати якомога частіше.
     BP32.update();
 
     updateEmergencyStop();
@@ -111,6 +116,7 @@ void loop() {
 
         // PL: Ograniczenie dt chroni przed dużym skokiem zadania po chwilowym opóźnieniu.
         // EN: Limiting dt prevents a large command jump after a temporary delay.
+        // UA: Обмеження dt запобігає великому стрибку завдання після короткої затримки.
         deltaTimeSeconds = clampFloat(deltaTimeSeconds, 0.0f, MAX_CONTROL_DT_S);
 
         if (!robot.estopLatched) {
