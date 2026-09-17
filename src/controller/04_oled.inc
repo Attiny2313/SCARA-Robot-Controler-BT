@@ -1,3 +1,8 @@
+#include "logo_pp_oled.h"
+
+constexpr uint32_t OLED_SPLASH_DURATION_MS = 5000;
+uint32_t oledSplashUntilMs = 0;
+
 // ============================================================
 // SERWA NARZĘDZIA / TOOL SERVOS
 // ============================================================
@@ -70,17 +75,20 @@ bool initializeDisplay() {
         return false;
     }
 
+    // PL: Po starcie wyświetl logo PP przez 5 sekund bez blokowania programu.
+    // EN: Show the PP logo for 5 seconds after startup without blocking the program.
+    // UA: Після запуску показувати логотип PP протягом 5 секунд без блокування програми.
     display.clearDisplay();
-    display.setTextColor(SSD1306_WHITE);
-    display.setTextSize(1);
-    display.setCursor(0, 0);
-    display.println("SCARA Controller");
-    display.println("Robotyka bez granic");
-    display.print("OLED 0x");
-    if (displayI2cAddress < 0x10) display.print('0');
-    display.print(displayI2cAddress, HEX);
-    display.println(" OK");
+    display.drawBitmap(
+        (OLED_WIDTH - PP_LOGO_WIDTH) / 2,
+        (OLED_HEIGHT - PP_LOGO_HEIGHT) / 2,
+        PP_LOGO_BITMAP,
+        PP_LOGO_WIDTH,
+        PP_LOGO_HEIGHT,
+        SSD1306_WHITE);
     display.display();
+
+    oledSplashUntilMs = millis() + OLED_SPLASH_DURATION_MS;
 
     Serial.printf("OLED: SSD1306 128x64 znaleziony pod 0x%02X\n", displayI2cAddress);
     return true;
@@ -110,6 +118,15 @@ void refreshDisplay() {
     if (!displayAvailable) return;
 
     const uint32_t now = millis();
+
+    // PL: Splash nie blokuje pętli głównej; przez 5 s tylko nie nadpisujemy OLED.
+    // EN: The splash does not block the main loop; for 5 s we only avoid redrawing OLED.
+    // UA: Splash не блокує головний цикл; протягом 5 с OLED просто не перемальовується.
+    if (oledSplashUntilMs != 0) {
+        if (static_cast<int32_t>(now - oledSplashUntilMs) < 0) return;
+        oledSplashUntilMs = 0;
+    }
+
     if (now - lastDisplayMs < DISPLAY_PERIOD_MS) return;
     lastDisplayMs = now;
 
