@@ -1,6 +1,14 @@
 // ============================================================
 // PROGRAM TEACH I NVS / TEACH PROGRAM AND NVS STORAGE
 // ============================================================
+bool programPointValid(const ProgramPoint& p) {
+    return jointPositionFinite(p.joints) &&
+           isfinite(p.toolRotateDeg) && isfinite(p.gripperDeg) &&
+           p.joints.arm1Deg >= ARM1_MIN_DEG && p.joints.arm1Deg <= ARM1_MAX_DEG &&
+           p.joints.arm2Deg >= ARM2_MIN_DEG && p.joints.arm2Deg <= ARM2_MAX_DEG &&
+           p.joints.zMm >= Z_MIN_MM && p.joints.zMm <= Z_MAX_MM;
+}
+
 // PL: Program jest zapisywany w pamięci NVS ESP32 i pozostaje po restarcie.
 // EN: The taught program is stored in ESP32 NVS and survives a restart.
 void saveProgram() {
@@ -27,6 +35,17 @@ void loadProgram() {
             preferences.getBytes("points", programPoints, expected) != expected) {
             programPointCount = 0;
             saveProgram();
+            Serial.println("NVS: niezgodny format programu - wyczyszczono");
+            return;
+        }
+
+        for (uint8_t i = 0; i < programPointCount; ++i) {
+            if (!programPointValid(programPoints[i])) {
+                Serial.printf("NVS: P%02u zawiera NaN/Inf lub wartosc poza zakresem - wyczyszczono program\n", i + 1);
+                programPointCount = 0;
+                saveProgram();
+                return;
+            }
         }
     }
 }
@@ -53,11 +72,21 @@ void teachCurrentPoint() {
     }
 
     updateActualRobotPosition();
+    if (!jointPositionFinite(robot.actualJoints) || !cartesianPositionFinite(robot.actualTcp)) {
+        Serial.println("TEACH: blad numeryczny pozycji - punkt nie zostal zapisany");
+        return;
+    }
+
     ProgramPoint& p = programPoints[programPointCount];
     p.joints = robot.actualJoints;
     p.toolRotateDeg = robot.toolRotateDeg;
     p.gripperDeg = robot.gripperDeg;
     p.dwellMs = DEFAULT_POINT_DWELL_MS;
+
+    if (!programPointValid(p)) {
+        Serial.println("TEACH: nieprawidlowy punkt - zapis anulowany");
+        return;
+    }
 
     programPointCount++;
     saveProgram();
@@ -91,8 +120,10 @@ void pauseAuto(const char* reason) {
 
     emergencyStopMotion();
     updateActualRobotPosition();
-    robot.joints = robot.actualJoints;
-    robot.tcp = robot.actualTcp;
+    if (jointPositionFinite(robot.actualJoints)) {
+        robot.joints = robot.actualJoints;
+        robot.tcp = robot.actualTcp;
+    }
     robot.autoState = AutoState::PAUSED;
     autoMotionStarted = false;
     if (reason != nullptr) Serial.println(reason);
@@ -103,6 +134,13 @@ void startAuto() {
     if (programPointCount == 0) {
         Serial.println("AUTO: brak zapisanych punktów");
         return;
+    }
+
+    for (uint8_t i = 0; i < programPointCount; ++i) {
+        if (!programPointValid(programPoints[i])) {
+            setAutoFault("AUTO: program zawiera nieprawidlowy punkt");
+            return;
+        }
     }
 
     currentProgramPoint = 0;
@@ -145,11 +183,22 @@ void startCurrentProgramPoint() {
     }
 
     const ProgramPoint& p = programPoints[currentProgramPoint];
+    if (!programPointValid(p)) {
+        setAutoFault("AUTO: punkt zawiera NaN/Inf lub jest poza zakresem");
+        return;
+    }
+
     robot.toolRotateDeg = clampFloat(p.toolRotateDeg,
                                     TOOL_ROTATE_MIN_DEG, TOOL_ROTATE_MAX_DEG);
     robot.gripperDeg = clampFloat(p.gripperDeg,
                                  GRIP_MIN_DEG, GRIP_MAX_DEG);
     commandAutoJointPosition(p.joints);
+
+    if (!jointPositionFinite(robot.joints)) {
+        setAutoFault("AUTO: blad numeryczny celu ruchu");
+        return;
+    }
+
     autoMotionStarted = true;
 
     Serial.printf("AUTO -> P%02u/%02u\n",
