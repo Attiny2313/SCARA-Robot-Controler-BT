@@ -8,6 +8,7 @@
 **Oprogramowanie:** C++ / Arduino Framework / PlatformIO  
 **Repozytorium:** `Attiny2313/SCARA-Robot-Controler-BT`  
 **Gałąź odpowiadająca niniejszemu opisowi:** `dev`  
+**Bazowy commit firmware/config:** `3dcf2272da6c95ba952772bd750d242ef21eb560`  
 
 > Dokument opisuje rzeczywistą wersję projektu rozwijaną w repozytorium. Dane pochodzące z projektu bazowego PyBot zostały oddzielone od parametrów wynikających z aktualnej konstrukcji i programu sterującego.
 
@@ -79,23 +80,26 @@ Komputer nie jest wymagany do normalnej pracy robota. Jest wykorzystywany do pro
 |---|---:|
 | Długość członu ARM1 | 91,61 mm |
 | Długość członu ARM2 | 97,528 mm |
-| Przełożenie ARM1 | 3,875 |
+| Przełożenie ARM1 | 4,5 |
 | Przełożenie ARM2 | 7,280 |
 | Skok śruby osi Z | 2,0 mm/obr. |
 | Przełożenie Z | 1,0 |
-| Zakres programowy ARM1 | −115° ... +115° |
-| Zakres programowy ARM2 | −147° ... +147° |
+| Zakres programowy ARM1 | −105° ... +105° |
+| Zakres programowy ARM2 | −125° ... +125° |
 | Zakres programowy Z | 0 ... 300 mm |
 | Zakres obrotu chwytaka | 0 ... 180° |
 | Zakres serwa chwytaka | 15 ... 95° |
 | Prędkość ręczna ARM1 | 25°/s |
 | Prędkość ręczna ARM2 | 25°/s |
-| Prędkość ręczna Z | 1,5 mm/s |
+| Prędkość ręczna Z | 3,0 mm/s |
 | Prędkość TCP w trybie TOOL | 20 mm/s |
 | Bazowa prędkość AUTO ARM1 | 20°/s |
 | Bazowa prędkość AUTO ARM2 | 20°/s |
-| Prędkość AUTO Z | 1,5 mm/s |
-| Regulacja prędkości ramion AUTO | 50...250% |
+| Bazowa prędkość AUTO Z | 3,0 mm/s |
+| Override prędkości AUTO | 50...250% dla ARM1, ARM2 i Z |
+| Przyspieszenie ARM1 | 12000 STEP/s² |
+| Przyspieszenie ARM2 | 5000 STEP/s² |
+| Przyspieszenie Z | 6000 STEP/s² |
 | Liczba punktów programu TEACH | maks. 20 |
 
 ## 3.3. Parametry wymagające pomiaru rzeczywistego egzemplarza
@@ -207,6 +211,7 @@ Układ elektroniczny zawiera:
 - przyciski TEACH i MODE,
 - obwód E-STOP,
 - diody sygnalizacyjne,
+- wyświetlacz OLED SSD1306 128×64 I2C,
 - złącza krańcówek,
 - elementy bierne i zabezpieczające.
 
@@ -233,6 +238,8 @@ Dokumentacja płytki PCB znajduje się w katalogu `PCB` repozytorium.
 | LED Bluetooth | 4 |
 | LED ERROR | 16 |
 | LED STATUS | 17 |
+| I2C SDA (OLED) | 21 |
+| I2C SCL (OLED) | 22 |
 
 ## 6.3. Krańcówki
 
@@ -253,6 +260,22 @@ Po jego aktywacji firmware:
 - wymaga restartu sterownika przed ponowną pracą.
 
 Układ powinien być wykonany tak, aby E-STOP nie opierał się wyłącznie na programie, lecz dodatkowo ograniczał możliwość dalszego zasilania lub aktywacji napędów zgodnie z założeniami płytki sterującej.
+
+## 6.5. Wyświetlacz OLED
+
+Sterownik obsługuje wyświetlacz OLED SSD1306 128×64 podłączony przez I2C. Magistrala wykorzystuje GPIO21 jako SDA i GPIO22 jako SCL.
+
+Podczas inicjalizacji firmware automatycznie sprawdza adresy `0x3C` i `0x3D`. Brak wyświetlacza nie blokuje pracy robota — informacja o problemie jest wysyłana przez Serial.
+
+W czasie pracy OLED pokazuje m.in.:
+
+- tryb MANUAL/AUTO i stan programu,
+- stan połączenia Bluetooth,
+- liczbę zapisanych punktów TEACH,
+- override prędkości w AUTO,
+- aktualne położenia ARM1, ARM2 i Z,
+- pozycję TCP X/Y lub numer aktualnego punktu programu,
+- stany błędów, w tym `E-STOP` i `NUM ERR`.
 
 ---
 
@@ -306,6 +329,10 @@ Biblioteka steruje serwomechanizmami chwytaka.
 ### Preferences
 
 Biblioteka obsługuje pamięć NVS ESP32. W pamięci zapisywany jest program TEACH, dzięki czemu punkty pozostają dostępne po wyłączeniu zasilania.
+
+### Adafruit GFX / Adafruit SSD1306
+
+Biblioteki odpowiadają za obsługę wyświetlacza OLED SSD1306 128×64, prezentację stanu robota oraz podstawową diagnostykę.
 
 ---
 
@@ -416,8 +443,8 @@ Firmware przyjmuje następujące wartości startowe:
 
 | Oś | Pozycja HOME |
 |---|---:|
-| ARM1 | +115° |
-| ARM2 | −147° |
+| ARM1 | 0° |
+| ARM2 | 0° |
 | Z | 0 mm |
 | Obrót chwytaka | 90° |
 | Chwytak | 30° |
@@ -509,7 +536,7 @@ Interpolacja liniowa LIN jest przewidywana jako możliwe przyszłe rozszerzenie.
 
 # 17. REGULACJA PRĘDKOŚCI W AUTO
 
-W gałęzi `dev` dostępna jest regulacja prędkości ramion w trakcie pracy AUTO.
+W gałęzi `dev` dostępna jest regulacja prędkości całego ruchu w trybie AUTO.
 
 | D-pad | Funkcja |
 |---|---|
@@ -521,43 +548,57 @@ Zakres regulacji:
 
 `50% ... 250%`
 
-Regulacja dotyczy ARM1 i ARM2. Oś Z zachowuje swoją stałą, ograniczoną prędkość.
+Override skaluje bazowe prędkości wszystkich trzech osi: ARM1, ARM2 i Z. Przy 100% wartości bazowe wynoszą odpowiednio 20°/s, 20°/s i 3,0 mm/s.
 
 Zmiana prędkości zaczyna obowiązywać od kolejnego ruchu PTP. Bieżący ruch nie jest przeliczany w locie.
 
 ---
 
+
 # 18. ZABEZPIECZENIA PROGRAMOWE
 
-Firmware zawiera kilka warstw zabezpieczeń.
+Firmware zawiera kilka warstw zabezpieczeń i kontroli poprawności danych.
 
 ## 18.1. Limity pozycji
 
 Polecenia ruchu są ograniczane do zakresów:
 
-- ARM1: −115° ... +115°,
-- ARM2: −147° ... +147°,
+- ARM1: −105° ... +105°,
+- ARM2: −125° ... +125°,
 - Z: 0 ... 300 mm.
 
-## 18.2. Twarde limity częstotliwości STEP
+## 18.2. Częstotliwość STEP i prędkość
 
-Maksymalne częstotliwości STEP są ograniczone niezależnie od prędkości zadanej przez operatora lub AUTO.
+Aktualny firmware nie stosuje dodatkowych twardych górnych limitów częstotliwości STEP. Częstotliwość STEP wynika z zadanej prędkości osi, przełożenia, mikrokroku oraz override AUTO.
 
-Zapobiega to wygenerowaniu zbyt dużej prędkości w wyniku błędnego zadania.
+W MANUAL prędkość jest ograniczana do skonfigurowanych prędkości JOG, natomiast w AUTO do bazowych prędkości AUTO pomnożonych przez override 50...250%. Przyspieszenia są realizowane przez FastAccelStepper.
 
-## 18.3. Timeout pada
+## 18.3. Walidacja wartości numerycznych
+
+Przed przeliczeniami i wydaniem części poleceń ruchu sprawdzane są wartości typu `NaN` i `Inf`. W przypadku wykrycia błędu firmware nie przekazuje nieprawidłowej pozycji do napędów, może zsynchronizować pozycję z licznikami kroków i zgłasza błąd przez Serial/OLED.
+
+## 18.4. Walidacja programu TEACH/NVS
+
+Podczas odczytu programu z NVS sprawdzany jest rozmiar danych oraz poprawność zapisanych punktów. Nieprawidłowy program, np. zawierający `NaN`, `Inf` lub pozycję poza zakresem osi, jest odrzucany i czyszczony.
+
+## 18.5. Timeout pada
 
 W MANUAL brak aktualnych danych z kontrolera przez określony czas powoduje zatrzymanie ruchu i rozbrojenie sterowania.
 
-## 18.4. Neutralne uzbrojenie pada
+## 18.6. Neutralne uzbrojenie pada
 
-Po połączeniu kontrolera wymagane jest neutralne położenie elementów sterujących przed uzbrojeniem ruchu.
+Po połączeniu kontrolera wymagane jest neutralne położenie elementów sterujących przez około 300 ms przed uzbrojeniem ruchu.
 
-## 18.5. E-STOP
+## 18.7. Utrata kontrolera w AUTO
 
-E-STOP zatrzaskuje stan awaryjny do czasu restartu sterownika.
+Rozłączenie kontrolera podczas aktywnego cyklu AUTO powoduje przejście programu w PAUSE.
+
+## 18.8. E-STOP
+
+E-STOP zatrzaskuje stan awaryjny do czasu restartu sterownika. Programowo zatrzymywane są generatory kroków, AUTO przechodzi w FAULT, a sterowanie ręczne pozostaje zablokowane.
 
 ---
+
 
 # 19. PROCEDURA MONTAŻU ELEKTRONIKI
 
@@ -739,7 +780,6 @@ Projekt może zostać rozwinięty o:
 
 - automatyczny homing z wykorzystaniem krańcówek,
 - interpolację liniową LIN w przestrzeni TCP,
-- obsługę wyświetlacza OLED,
 - system wizyjny,
 - kamerę do rozpoznawania obiektów,
 - czujnik odległości,
@@ -832,7 +872,8 @@ Aktualna wersja robota umożliwia:
 - sterowanie TCP w trybie TOOL,
 - zapisywanie punktów TEACH,
 - automatyczne odtwarzanie programu PTP,
-- regulację prędkości ruchu ramion w AUTO,
+- regulację prędkości ARM1, ARM2 i Z w AUTO,
+- bieżący podgląd stanu na wyświetlaczu OLED,
 - trwałe przechowywanie programu w pamięci ESP32,
 - zatrzymanie awaryjne oraz dodatkowe zabezpieczenia programowe.
 
