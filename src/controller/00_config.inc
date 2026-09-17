@@ -107,8 +107,8 @@ constexpr float STEPS_PER_MM_Z =
 //     The firmware assumes these values are the actual startup position.
 // UA: Перед увімкненням або скиданням робот потрібно вручну встановити
 //     у положення HOME. Програма приймає ці значення як поточну стартову позицію.
-constexpr float HOME_ARM1_DEG = 115.0f;
-constexpr float HOME_ARM2_DEG = -147.0f;
+constexpr float HOME_ARM1_DEG = 0.0f;
+constexpr float HOME_ARM2_DEG = 0.0f;
 constexpr float HOME_Z_MM     = 0.0f;
 constexpr float HOME_TOOL_ROTATE_DEG = 90.0f;
 constexpr float HOME_GRIP_DEG        = 30.0f;
