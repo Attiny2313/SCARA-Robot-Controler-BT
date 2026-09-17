@@ -79,7 +79,7 @@ constexpr float ARM_LENGTH_2_MM = 97.528f;
 constexpr float MOTOR_STEPS_REV = 200.0f;
 constexpr float MICROSTEPS      = 16.0f;
 
-constexpr float GEAR_ARM1 = 3.875f;
+constexpr float GEAR_ARM1 = 4.5f;
 constexpr float GEAR_ARM2 = 7.280f;
 constexpr float Z_SCREW_LEAD_MM = 2.0f;
 constexpr float GEAR_Z          = 1.0f;
@@ -119,10 +119,10 @@ constexpr float HOME_GRIP_DEG        = 30.0f;
 // PL: Ograniczenia chronią mechanikę w trybach MANUAL, TOOL i AUTO.
 // EN: These limits protect the mechanism in MANUAL, TOOL and AUTO modes.
 // UA: Ці обмеження захищають механіку в режимах MANUAL, TOOL і AUTO.
-constexpr float ARM1_MIN_DEG = -115.0f;
-constexpr float ARM1_MAX_DEG =  115.0f;
-constexpr float ARM2_MIN_DEG = -147.0f;
-constexpr float ARM2_MAX_DEG =  147.0f;
+constexpr float ARM1_MIN_DEG = -105.0f;
+constexpr float ARM1_MAX_DEG =  105.0f;
+constexpr float ARM2_MIN_DEG = -125.0f;
+constexpr float ARM2_MAX_DEG =  125.0f;
 constexpr float Z_MIN_MM = 0.0f;
 constexpr float Z_MAX_MM = 300.0f;
 constexpr float TOOL_ROTATE_MIN_DEG = 0.0f;
@@ -184,7 +184,7 @@ constexpr uint32_t ARM2_ACCEL = 5000;
 // PL: Przy 1600 STEP/mm: 3000 STEP/s² = 1.875 mm/s².
 // EN: At 1600 STEP/mm: 3000 STEP/s² = 1.875 mm/s².
 // UA: За 1600 STEP/мм: 3000 STEP/с² = 1,875 мм/с².
-constexpr uint32_t Z_ACCEL    = 3000;
+constexpr uint32_t Z_ACCEL    = 6000;
 
 // ============================================================
 // CZASY I AUTO / TIMING AND AUTO SETTINGS
