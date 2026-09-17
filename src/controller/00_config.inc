@@ -5,11 +5,15 @@
  *     zapisem punktów TEACH i automatycznym odtwarzaniem programu.
  * EN: Controller for a 3-axis SCARA robot with gamepad manual control,
  *     TEACH point storage and automatic program playback.
+ * UA: Контролер 3-осьового робота SCARA з ручним керуванням від геймпада,
+ *     збереженням точок TEACH та автоматичним відтворенням програми.
  *
  * PL: Homing jest wykonywany ręcznie. Przed uruchomieniem operator musi
  *     ustawić robota w pozycji HOME zdefiniowanej poniżej.
  * EN: Homing is manual. Before startup, the operator must place the robot
  *     in the HOME position defined below.
+ * UA: Повернення в HOME виконується вручну. Перед запуском оператор повинен
+ *     встановити робота в положення HOME, визначене нижче.
  */
 
 #include <Arduino.h>
@@ -30,6 +34,7 @@ constexpr uint8_t PIN_LED_STATUS   = 17;
 
 // PL: Dioda BT na obecnej płytce jest sterowana aktywnym stanem wysokim.
 // EN: The BT LED on the current board is active-high.
+// UA: Світлодіод BT на поточній платі активується високим рівнем.
 constexpr bool BT_LED_ACTIVE_LOW = false;
 constexpr uint32_t BT_LED_BLINK_MS = 500;
 
@@ -59,6 +64,8 @@ constexpr uint8_t PIN_ESTOP        = 39;
 //     Aktualna wersja programu używa ręcznego homingu.
 // EN: Endstop inputs are kept in hardware for future use.
 //     The current firmware uses manual homing.
+// UA: Входи кінцевих вимикачів збережені апаратно для майбутнього використання.
+//     Поточна версія програми використовує ручне встановлення HOME.
 constexpr uint8_t PIN_ENDSTOP_Z    = 34;
 constexpr uint8_t PIN_ENDSTOP_ARM1 = 35;
 constexpr uint8_t PIN_ENDSTOP_ARM2 = 36;
@@ -79,6 +86,7 @@ constexpr float GEAR_Z          = 1.0f;
 
 // PL: Znak osi pozwala odwrócić kierunek logiczny bez przepinania przewodów.
 // EN: Axis sign allows logical direction reversal without rewiring the motor.
+// UA: Знак осі дозволяє змінити логічний напрямок без перепідключення двигуна.
 constexpr int8_t SIGN_ARM1 = 1;
 constexpr int8_t SIGN_ARM2 = 1;
 constexpr int8_t SIGN_Z    = -1;
@@ -97,6 +105,8 @@ constexpr float STEPS_PER_MM_Z =
 //     w pozycji HOME. Program przyjmuje te wartości jako pozycję aktualną.
 // EN: Before power-up or reset the robot must be manually placed in HOME.
 //     The firmware assumes these values are the actual startup position.
+// UA: Перед увімкненням або скиданням робот потрібно вручну встановити
+//     у положення HOME. Програма приймає ці значення як поточну стартову позицію.
 constexpr float HOME_ARM1_DEG = 115.0f;
 constexpr float HOME_ARM2_DEG = -147.0f;
 constexpr float HOME_Z_MM     = 0.0f;
@@ -108,6 +118,7 @@ constexpr float HOME_GRIP_DEG        = 30.0f;
 // ============================================================
 // PL: Ograniczenia chronią mechanikę w trybach MANUAL, TOOL i AUTO.
 // EN: These limits protect the mechanism in MANUAL, TOOL and AUTO modes.
+// UA: Ці обмеження захищають механіку в режимах MANUAL, TOOL і AUTO.
 constexpr float ARM1_MIN_DEG = -115.0f;
 constexpr float ARM1_MAX_DEG =  115.0f;
 constexpr float ARM2_MIN_DEG = -147.0f;
@@ -124,16 +135,19 @@ constexpr float GRIP_MAX_DEG = 95.0f;
 // ============================================================
 // PL: ARM1 i ARM2 mają tę samą prędkość kątową w sterowaniu ręcznym.
 // EN: ARM1 and ARM2 use the same angular speed in manual control.
+// UA: ARM1 і ARM2 мають однакову кутову швидкість у ручному режимі.
 constexpr float ARM1_JOG_SPEED_DEG_S = 25.0f;
 constexpr float ARM2_JOG_SPEED_DEG_S = 25.0f;
 
 // PL: Oś Z ma podniesioną prędkość bazową do 3 mm/s.
 // EN: Z-axis base speed is raised to 3 mm/s.
+// UA: Базову швидкість осі Z підвищено до 3 мм/с.
 constexpr float Z_JOG_SPEED_MM_S     = 3.0f;
 constexpr float TOOL_XY_SPEED_MM_S   = 20.0f;
 
 // PL: Bazowe prędkości programu automatycznego.
 // EN: Base speeds used by the automatic program.
+// UA: Базові швидкості, що використовуються в автоматичній програмі.
 constexpr float AUTO_ARM1_SPEED_DEG_S = 20.0f;
 constexpr float AUTO_ARM2_SPEED_DEG_S = 20.0f;
 constexpr float AUTO_Z_SPEED_MM_S     = 3.0f;
@@ -142,6 +156,8 @@ constexpr float AUTO_Z_SPEED_MM_S     = 3.0f;
 //     zmienia wartość o 10%, a D-pad lewo przywraca 100%.
 // EN: AUTO speed override scales all three axes. D-pad up/down changes it
 //     by 10%, while D-pad left restores 100%.
+// UA: Корекція швидкості AUTO масштабує всі три осі. D-pad вгору/вниз
+//     змінює значення на 10%, а D-pad вліво повертає 100%.
 constexpr uint16_t AUTO_ARM_SPEED_PERCENT_DEFAULT = 100;
 constexpr uint16_t AUTO_ARM_SPEED_PERCENT_MIN     = 50;
 constexpr uint16_t AUTO_ARM_SPEED_PERCENT_MAX     = 250;
@@ -159,12 +175,15 @@ constexpr float SERVO_FILTER_ALPHA = 0.20f;
 // PL: Nie stosujemy dodatkowych twardych limitów częstotliwości STEP.
 //     Częstotliwość wynika z zadanych prędkości i procentu AUTO.
 // EN: No additional hard STEP-frequency caps are applied.
+// UA: Додаткові жорсткі обмеження частоти STEP не застосовуються.
+//     Частота визначається заданими швидкостями та відсотком AUTO.
 
 constexpr uint32_t ARM1_ACCEL = 12000;
 constexpr uint32_t ARM2_ACCEL = 5000;
 
 // PL: Przy 1600 STEP/mm: 3000 STEP/s² = 1.875 mm/s².
 // EN: At 1600 STEP/mm: 3000 STEP/s² = 1.875 mm/s².
+// UA: За 1600 STEP/мм: 3000 STEP/с² = 1,875 мм/с².
 constexpr uint32_t Z_ACCEL    = 3000;
 
 // ============================================================
@@ -219,6 +238,7 @@ struct CartesianPosition {
 
 // PL: Jeden punkt programu zawiera pozycję osi, pozycje serw i czas postoju.
 // EN: One program point stores joint positions, servo targets and dwell time.
+// UA: Одна точка програми зберігає положення осей, цільові положення сервоприводів і час паузи.
 struct ProgramPoint {
     JointPosition joints;
     float toolRotateDeg;
