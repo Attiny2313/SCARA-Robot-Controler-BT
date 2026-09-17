@@ -10,6 +10,8 @@ float clampFloat(float value, float minimum, float maximum) {
 // PL: Konwersja prędkości na częstotliwość STEP bez górnego limitu.
 //     Prędkość wynika z zadanych wartości osi oraz procentu AUTO.
 // EN: Convert speed to STEP frequency without an upper software limit.
+// UA: Перетворення швидкості на частоту STEP без верхнього програмного обмеження.
+//     Швидкість визначається заданими значеннями осей та відсотком AUTO.
 uint32_t stepHz(float hz) {
     if (!isfinite(hz) || hz < 1.0f) return 1;
     return static_cast<uint32_t>(lroundf(hz));
@@ -33,6 +35,7 @@ float radToDeg(float radians) {
 
 // PL: Normalizacja osi pada do zakresu -1...+1 z martwą strefą.
 // EN: Normalize a gamepad axis to -1...+1 with a dead zone around center.
+// UA: Нормалізація осі геймпада до діапазону -1...+1 з мертвою зоною біля центру.
 float normalizeJoystick(int32_t value) {
     if (abs(value) < JOYSTICK_DEADZONE) return 0.0f;
     constexpr float maximumAxisValue = 512.0f;
@@ -91,6 +94,8 @@ void setAutoArmSpeedPercent(int32_t requestedPercent) {
 //     Zmiana obowiązuje od następnego punktu PTP i skaluje wszystkie 3 osie.
 // EN: D-pad is edge-triggered: up +10%, down -10%, left = 100%.
 //     The new value takes effect from the next PTP point and scales all 3 axes.
+// UA: D-pad обробляється за фронтом: вгору +10%, вниз -10%, вліво = 100%.
+//     Нова величина діє від наступної точки PTP і масштабує всі 3 осі.
 void processAutoSpeedDpad(uint8_t dpad) {
     const bool upPressed = (dpad & DPAD_UP) != 0 && (previousAutoDpad & DPAD_UP) == 0;
     const bool downPressed = (dpad & DPAD_DOWN) != 0 && (previousAutoDpad & DPAD_DOWN) == 0;
@@ -112,6 +117,7 @@ void processAutoSpeedDpad(uint8_t dpad) {
 // ============================================================
 // PL: Kinematyka prosta: kąty obu ramion -> pozycja TCP X/Y/Z.
 // EN: Forward kinematics: arm angles -> TCP position X/Y/Z.
+// UA: Пряма кінематика: кути обох ланок -> положення TCP X/Y/Z.
 CartesianPosition forwardKinematics(const JointPosition& joints) {
     if (!jointPositionFinite(joints)) return {NAN, NAN, NAN};
 
@@ -131,6 +137,8 @@ CartesianPosition forwardKinematics(const JointPosition& joints) {
 //     jedną z dwóch geometrycznie możliwych konfiguracji ramienia.
 // EN: Inverse kinematics for the XY plane. elbowUp selects one of the two
 //     geometrically possible arm configurations.
+// UA: Обернена кінематика для площини XY. Параметр elbowUp вибирає одну
+//     з двох геометрично можливих конфігурацій маніпулятора.
 bool inverseKinematics(float xMm, float yMm, bool elbowUp, JointPosition& result) {
     if (!isfinite(xMm) || !isfinite(yMm)) return false;
 
@@ -165,6 +173,7 @@ bool inverseKinematics(float xMm, float yMm, bool elbowUp, JointPosition& result
 // ============================================================
 // PL: Pozycja rzeczywista jest wyliczana z liczników kroków FastAccelStepper.
 // EN: Actual position is calculated from FastAccelStepper step counters.
+// UA: Фактичне положення обчислюється з лічильників кроків FastAccelStepper.
 void updateActualRobotPosition() {
     if (stepperArm1 == nullptr || stepperArm2 == nullptr || stepperZ == nullptr) return;
 
@@ -205,6 +214,7 @@ JointPosition clampJointPosition(const JointPosition& target) {
 
 // PL: Natychmiastowe zatrzymanie generatorów kroków.
 // EN: Immediately stop all step generators.
+// UA: Негайна зупинка всіх генераторів кроків.
 void emergencyStopMotion() {
     if (stepperArm1 != nullptr) stepperArm1->forceStop();
     if (stepperArm2 != nullptr) stepperArm2->forceStop();
@@ -213,6 +223,7 @@ void emergencyStopMotion() {
 
 // PL: Ruch ręczny przyjmuje małe, cyklicznie aktualizowane cele pozycji.
 // EN: Manual motion receives small position targets updated every control cycle.
+// UA: Ручний рух отримує невеликі цільові зміщення, що оновлюються в кожному циклі керування.
 void commandManualJointPosition(const JointPosition& target, float deltaTimeSeconds) {
     if (robot.estopLatched || !robot.gamepadArmed ||
         robot.operatingMode != OperatingMode::MANUAL) return;
@@ -270,6 +281,8 @@ void commandManualJointPosition(const JointPosition& target, float deltaTimeSeco
 //     Brak dodatkowych programowych limitów częstotliwości STEP.
 // EN: AUTO performs PTP motion. The same speed percentage scales ARM1, ARM2 and Z.
 //     There are no additional software STEP-frequency caps.
+// UA: AUTO виконує рух PTP. Той самий відсоток швидкості масштабує ARM1, ARM2 і Z.
+//     Додаткові програмні обмеження частоти STEP не застосовуються.
 void commandAutoJointPosition(const JointPosition& target) {
     if (robot.estopLatched || robot.operatingMode != OperatingMode::AUTO) return;
 
