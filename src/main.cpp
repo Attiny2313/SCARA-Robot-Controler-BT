@@ -1,7 +1,9 @@
 // SCARA Robot Controller / Sterownik robota SCARA
 //
-// Implementacja jest podzielona na sekcje .inc, ale wszystkie są dołączane
-// do jednej jednostki kompilacji. Kolejność include ma znaczenie.
+// PL: Implementacja jest podzielona na sekcje .inc, ale wszystkie są dołączane
+//     do jednej jednostki kompilacji. Kolejność include ma znaczenie.
+// UA: Реалізацію поділено на секції .inc, але всі вони підключаються
+//     до однієї одиниці компіляції. Порядок include має значення.
 
 #include "controller/00_config.inc"
 #include "controller/01_motion.inc"
