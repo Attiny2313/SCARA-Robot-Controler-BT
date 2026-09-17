@@ -33,10 +33,10 @@ void processToolMode(float axisX, float axisY, float axisZ, float deltaTimeSecon
     commandManualJointPosition(calculatedJoints, deltaTimeSeconds);
 }
 
-// PL: W AUTO pad służy do START/PAUSE/RESUME i regulacji prędkości ramion.
+// PL: W AUTO pad służy do START/PAUSE/RESUME i regulacji prędkości całego ruchu.
 //     Timeout hasData() jest używany tylko w MANUAL; brak nowych ramek nie
 //     oznacza rozłączenia kontrolera podczas programu automatycznego.
-// EN: In AUTO the gamepad is used for START/PAUSE/RESUME and arm speed override.
+// EN: In AUTO the gamepad is used for START/PAUSE/RESUME and motion speed override.
 void processGamepad(float deltaTimeSeconds) {
     ControllerPtr controller = getActiveController();
 
@@ -116,12 +116,12 @@ bool initializeSteppers() {
     stepperArm2->setDirectionPin(PIN_DIR_ARM2, true, 200);
     stepperZ->setDirectionPin(PIN_DIR_Z, true, 200);
 
-    stepperArm1->setSpeedInHz(clampStepHz(
-        ARM1_JOG_SPEED_DEG_S * STEPS_PER_DEG_ARM1, ARM1_MAX_STEP_HZ));
-    stepperArm2->setSpeedInHz(clampStepHz(
-        ARM2_JOG_SPEED_DEG_S * STEPS_PER_DEG_ARM2, ARM2_MAX_STEP_HZ));
-    stepperZ->setSpeedInHz(clampStepHz(
-        Z_JOG_SPEED_MM_S * STEPS_PER_MM_Z, Z_MAX_STEP_HZ));
+    stepperArm1->setSpeedInHz(stepHz(
+        ARM1_JOG_SPEED_DEG_S * STEPS_PER_DEG_ARM1));
+    stepperArm2->setSpeedInHz(stepHz(
+        ARM2_JOG_SPEED_DEG_S * STEPS_PER_DEG_ARM2));
+    stepperZ->setSpeedInHz(stepHz(
+        Z_JOG_SPEED_MM_S * STEPS_PER_MM_Z));
 
     stepperArm1->setAcceleration(ARM1_ACCEL);
     stepperArm2->setAcceleration(ARM2_ACCEL);
@@ -135,4 +135,3 @@ bool initializeSteppers() {
 
     return true;
 }
-
