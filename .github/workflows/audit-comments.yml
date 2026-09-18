@@ -16,11 +16,16 @@ jobs:
       - name: Audit comment blocks
         shell: python
         run: |
-          import pathlib, re
+          import pathlib
           exts={'.cpp','.h','.hpp','.inc'}
           for p in sorted(pathlib.Path('src').rglob('*')):
               if p.suffix not in exts: continue
               lines=p.read_text(encoding='utf-8').splitlines()
+              print(f'=== {p} ===')
+              for n,line in enumerate(lines,1):
+                  s=line.lstrip()
+                  if s.startswith('//') and ' / ' in s and not any(tag in s for tag in ('PL:','EN:','UA:')):
+                      print(f'SECTION {n}: {line}')
               i=0
               while i < len(lines):
                   s=lines[i].lstrip()
@@ -32,10 +37,9 @@ jobs:
                       block.append(lines[i])
                       i+=1
                   text='\n'.join(block)
-                  meaningful=[x for x in block if x.strip('/') .strip() and set(x.strip()) != {'/','='}]
+                  meaningful=[x for x in block if x.strip('/').strip() and set(x.strip()) != {'/','='}]
                   if not meaningful: continue
                   if 'PL:' in text and 'EN:' in text and 'UA:' in text:
                       continue
-                  print(f'--- {p}:{start+1}-{i} ---')
+                  print(f'MISSING {start+1}-{i}:')
                   print(text)
-          
