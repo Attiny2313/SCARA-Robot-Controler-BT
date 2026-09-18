@@ -134,6 +134,40 @@ void refreshDisplay() {
     display.setTextColor(SSD1306_WHITE);
     display.setTextSize(1);
 
+    // PL: Po splashu, przed normalnym ekranem pracy, wymuszamy ręczne ustawienie Z=0.
+    // EN: After the splash and before normal operation, require manual Z=0 setup.
+    // UA: Після splash і перед звичайною роботою потрібно вручну встановити Z=0.
+    if (startupZHomeRequired && !robot.estopLatched) {
+        display.setCursor(0, 0);
+        display.print("SET Z HOME");
+
+        display.setCursor(0, 10);
+        display.print("BT:");
+        display.print(robot.controllerConnected ? "OK" : "WAIT");
+        display.print(" PAD:");
+        display.print(robot.gamepadArmed ? "ARM" : "SAFE");
+
+        display.setCursor(0, 20);
+        display.print("RY: move Z");
+
+        display.setCursor(0, 30);
+        display.print("A+B: confirm Z=0");
+
+        display.setCursor(0, 40);
+        display.print("REL:");
+        if (stepperZ != nullptr) {
+            oledPrintFloatOrErr(zStepsToMillimeters(stepperZ->getCurrentPosition()), 1);
+            display.print(" mm");
+        } else {
+            display.print("ERR");
+        }
+
+        display.setCursor(0, 50);
+        display.print("ARM1/2: manual 0");
+        display.display();
+        return;
+    }
+
     const bool numericOk = jointPositionFinite(robot.actualJoints) &&
                            cartesianPositionFinite(robot.actualTcp) &&
                            jointPositionFinite(robot.joints);
