@@ -1,8 +1,12 @@
 #pragma once
 #include <Arduino.h>
 
-// PP logo converted from Logo.png for SSD1306 128x64.
-// Source black pixels are rendered as white OLED pixels.
+// PL: Logo PP przekonwertowane z Logo.png dla SSD1306 128x64.
+//     Czarne piksele źródła są wyświetlane jako białe piksele OLED.
+// EN: PP logo converted from Logo.png for SSD1306 128x64.
+//     Source black pixels are rendered as white OLED pixels.
+// UA: Логотип PP перетворено з Logo.png для SSD1306 128x64.
+//     Чорні пікселі джерела відображаються як білі пікселі OLED.
 constexpr uint8_t PP_LOGO_WIDTH = 60;
 constexpr uint8_t PP_LOGO_HEIGHT = 60;
 

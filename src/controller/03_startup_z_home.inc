@@ -1,5 +1,7 @@
 // ============================================================
-// STARTOWE USTAWIANIE HOME Z / STARTUP Z HOME ASSIST
+// PL: STARTOWE USTAWIANIE HOME Z
+// EN: STARTUP Z HOME ASSIST
+// UA: СТАРТОВЕ ВСТАНОВЛЕННЯ HOME ОСІ Z
 // ============================================================
 // PL: ARM1 i ARM2 są ustawiane ręcznie w pozycji 0 przed resetem.
 //     Po uruchomieniu operator ustawia oś Z padem, a następnie zatwierdza
@@ -59,6 +61,10 @@ void completeStartupZHome() {
 
     // PL: Po A+B pad jest ponownie rozbrajany. Operator musi puścić przyciski
     //     i pozostawić pad neutralny przez standardowy czas uzbrajania.
+    // EN: After A+B the gamepad is disarmed again. The operator must release the buttons
+    //     and keep the gamepad neutral for the standard arming time.
+    // UA: Після A+B геймпад знову роззброюється. Оператор повинен відпустити кнопки
+    //     і тримати геймпад у нейтральному положенні протягом стандартного часу озброєння.
     robot.gamepadArmed = false;
     gamepadNeutralSinceMs = 0;
     digitalWrite(PIN_LED_ERROR, LOW);
@@ -72,9 +78,12 @@ void processStartupZHome(float axisZ, bool confirmCombo, float deltaTimeSeconds)
 
     // PL: W czasie ustawiania HOME Z nie stosujemy normalnych limitów Z,
     //     bo pozycja absolutna nie jest jeszcze znana. Ograniczamy jedynie
-    //     maksymalny ruch wzgledem punktu startowego.
+    //     maksymalny ruch względem punktu startowego.
     // EN: Normal Z limits are not used before HOME is known; only a relative
     //     startup travel guard is applied.
+    // UA: Під час встановлення HOME осі Z звичайні межі Z не застосовуються,
+    //     оскільки абсолютне положення ще невідоме. Обмежується лише максимальний
+    //     відносний хід від початкової точки.
     if (axisZ != 0.0f && deltaTimeSeconds > 0.0f) {
         startupZHomeTargetMm +=
             -axisZ * STARTUP_Z_HOME_JOG_SPEED_MM_S * deltaTimeSeconds;
@@ -93,6 +102,9 @@ void processStartupZHome(float axisZ, bool confirmCombo, float deltaTimeSeconds)
         //     do wcześniej narastającego celu.
         // EN: In startup homing, releasing the stick stops Z immediately for
         //     precise manual zero positioning.
+        // UA: У цьому спеціальному режимі після відпускання стіка вісь Z зупиняється
+        //     негайно, щоб оператор міг точно встановити фізичний нуль без руху
+        //     до попередньо накопиченої цільової позиції.
         stepperZ->forceStop();
         syncStartupZHomeTargetToActual();
     }

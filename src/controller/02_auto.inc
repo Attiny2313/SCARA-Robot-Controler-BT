@@ -1,5 +1,7 @@
 // ============================================================
-// PROGRAM TEACH I NVS / TEACH PROGRAM AND NVS STORAGE
+// PL: PROGRAM TEACH I NVS
+// EN: TEACH PROGRAM AND NVS STORAGE
+// UA: ПРОГРАМА TEACH ТА ЗБЕРІГАННЯ NVS
 // ============================================================
 bool programPointValid(const ProgramPoint& p) {
     return jointPositionFinite(p.joints) &&
@@ -100,7 +102,9 @@ void teachCurrentPoint() {
 }
 
 // ============================================================
-// TRYB AUTOMATYCZNY / AUTOMATIC MODE
+// PL: TRYB AUTOMATYCZNY
+// EN: AUTOMATIC MODE
+// UA: АВТОМАТИЧНИЙ РЕЖИМ
 // ============================================================
 void setAutoFault(const char* reason) {
     emergencyStopMotion();
@@ -259,7 +263,9 @@ void processAuto() {
 }
 
 // ============================================================
-// E-STOP / EMERGENCY STOP
+// PL: E-STOP / ZATRZYMANIE AWARYJNE
+// EN: E-STOP / EMERGENCY STOP
+// UA: E-STOP / АВАРІЙНА ЗУПИНКА
 // ============================================================
 // PL: E-STOP jest zatrzaskiwany programowo. Po aktywacji wymagany jest restart.
 // EN: E-STOP is latched in software. A restart is required after activation.

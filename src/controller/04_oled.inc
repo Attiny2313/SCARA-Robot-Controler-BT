@@ -4,7 +4,9 @@ constexpr uint32_t OLED_SPLASH_DURATION_MS = 5000;
 uint32_t oledSplashUntilMs = 0;
 
 // ============================================================
-// SERWA NARZĘDZIA / TOOL SERVOS
+// PL: SERWA NARZĘDZIA
+// EN: TOOL SERVOS
+// UA: СЕРВОПРИВОДИ ІНСТРУМЕНТА
 // ============================================================
 int angleToPulseUs(float angleDeg, float minimumDeg, float maximumDeg,
                    int minimumUs, int maximumUs) {
@@ -50,7 +52,9 @@ void refreshServos() {
 }
 
 // ============================================================
-// WYŚWIETLACZ OLED I2C / I2C OLED DISPLAY
+// PL: WYŚWIETLACZ OLED I2C
+// EN: I2C OLED DISPLAY
+// UA: OLED-ДИСПЛЕЙ I2C
 // ============================================================
 uint8_t detectOledAddress() {
     const uint8_t addresses[] = {OLED_ADDRESS_PRIMARY, OLED_ADDRESS_SECONDARY};

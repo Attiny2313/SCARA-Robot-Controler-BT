@@ -1,5 +1,7 @@
 // ============================================================
-// SETUP / INITIAL SETUP
+// PL: KONFIGURACJA POCZĄTKOWA
+// EN: INITIAL SETUP
+// UA: ПОЧАТКОВА ІНІЦІАЛІЗАЦІЯ
 // ============================================================
 void setup() {
     Serial.begin(115200);
@@ -27,6 +29,7 @@ void setup() {
     previousModeButton = digitalRead(PIN_BUTTON_MODE);
 
     // PL: BT LED startuje w stanie zgaszonym; updateBluetoothLed() rozpocznie miganie.
+    // EN: The BT LED starts off; updateBluetoothLed() will begin blinking.
     // UA: BT LED стартує вимкненим; updateBluetoothLed() запустить миготіння.
     digitalWrite(PIN_LED_BT, BT_LED_ACTIVE_LOW ? HIGH : LOW);
     digitalWrite(PIN_LED_ERROR, LOW);
@@ -97,7 +100,9 @@ void setup() {
 }
 
 // ============================================================
-// PĘTLA GŁÓWNA / MAIN LOOP
+// PL: PĘTLA GŁÓWNA
+// EN: MAIN LOOP
+// UA: ГОЛОВНИЙ ЦИКЛ
 // ============================================================
 void loop() {
     // PL: Bluepad32 musi być obsługiwany możliwie często.

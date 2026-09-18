@@ -1,5 +1,7 @@
 // ============================================================
-// FUNKCJE POMOCNICZE / HELPER FUNCTIONS
+// PL: FUNKCJE POMOCNICZE
+// EN: HELPER FUNCTIONS
+// UA: ДОПОМІЖНІ ФУНКЦІЇ
 // ============================================================
 float clampFloat(float value, float minimum, float maximum) {
     if (value < minimum) return minimum;
@@ -113,7 +115,9 @@ void processAutoSpeedDpad(uint8_t dpad) {
 }
 
 // ============================================================
-// KINEMATYKA / KINEMATICS
+// PL: KINEMATYKA
+// EN: KINEMATICS
+// UA: КІНЕМАТИКА
 // ============================================================
 // PL: Kinematyka prosta: kąty obu ramion -> pozycja TCP X/Y/Z.
 // EN: Forward kinematics: arm angles -> TCP position X/Y/Z.
@@ -169,7 +173,9 @@ bool inverseKinematics(float xMm, float yMm, bool elbowUp, JointPosition& result
 }
 
 // ============================================================
-// POZYCJA I RUCH / POSITION AND MOTION
+// PL: POZYCJA I RUCH
+// EN: POSITION AND MOTION
+// UA: ПОЛОЖЕННЯ ТА РУХ
 // ============================================================
 // PL: Pozycja rzeczywista jest wyliczana z liczników kroków FastAccelStepper.
 // EN: Actual position is calculated from FastAccelStepper step counters.

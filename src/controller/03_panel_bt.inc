@@ -1,4 +1,6 @@
-// TRYBY I PANEL / MODES AND CONTROL PANEL
+// PL: TRYBY I PANEL
+// EN: MODES AND CONTROL PANEL
+// UA: РЕЖИМИ ТА ПАНЕЛЬ КЕРУВАННЯ
 // ============================================================
 void toggleControlMode() {
     if (robot.estopLatched || !robot.gamepadArmed ||
@@ -113,7 +115,9 @@ void updatePanelButtons() {
 }
 
 // ============================================================
-// BLUEPAD32 I PAD / BLUEPAD32 AND GAMEPAD
+// PL: BLUEPAD32 I PAD
+// EN: BLUEPAD32 AND GAMEPAD
+// UA: BLUEPAD32 ТА ГЕЙМПАД
 // ============================================================
 ControllerPtr getActiveController() {
     for (ControllerPtr controller : controllers) {

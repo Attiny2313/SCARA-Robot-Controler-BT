@@ -1,5 +1,7 @@
 // ============================================================
-// MANUAL JOINT I TOOL / MANUAL JOINT AND TOOL CONTROL
+// PL: RĘCZNE STEROWANIE JOINT I TOOL
+// EN: MANUAL JOINT AND TOOL CONTROL
+// UA: РУЧНЕ КЕРУВАННЯ JOINT І TOOL
 // ============================================================
 // PL: JOINT steruje osiami bezpośrednio: ARM1, ARM2 i Z.
 // EN: JOINT directly controls the ARM1, ARM2 and Z axes.
@@ -49,6 +51,12 @@ void processGamepad(float deltaTimeSeconds) {
         // PL: Jeżeli pad zniknie podczas ustawiania HOME Z, zapamiętaj aktualne
         //     położenie jako nowy cel względny, aby po ponownym połączeniu Z
         //     nie próbowało wracać do starego celu.
+        // EN: If the gamepad disconnects while setting Z HOME, remember the current
+        //     position as the new relative target so that after reconnecting Z
+        //     does not try to return to the old target.
+        // UA: Якщо геймпад від'єднається під час встановлення HOME осі Z, запам'ятати
+        //     поточне положення як нову відносну ціль, щоб після повторного підключення Z
+        //     не намагалася повернутися до старої цілі.
         if (startupZHomeRequired) syncStartupZHomeTargetToActual();
 
         if (robot.operatingMode == OperatingMode::AUTO &&
@@ -76,6 +84,8 @@ void processGamepad(float deltaTimeSeconds) {
 
     // PL: Zapamiętuj D-pad także w MANUAL, aby przejście do AUTO z przytrzymanym
     //     kierunkiem nie zostało odczytane jako nowe naciśnięcie.
+    // EN: Remember the D-pad state also in MANUAL so that switching to AUTO while
+    //     a direction is held is not interpreted as a new press.
     // UA: Запам'ятовуй D-pad також у MANUAL, щоб перехід до AUTO з утримуваним
     //     напрямком не був розпізнаний як нове натискання.
     previousAutoDpad = dpad;
@@ -126,7 +136,9 @@ void processGamepad(float deltaTimeSeconds) {
 }
 
 // ============================================================
-// INICJALIZACJA SILNIKÓW / STEPPER INITIALIZATION
+// PL: INICJALIZACJA SILNIKÓW KROKOWYCH
+// EN: STEPPER INITIALIZATION
+// UA: ІНІЦІАЛІЗАЦІЯ КРОКОВИХ ДВИГУНІВ
 // ============================================================
 bool initializeSteppers() {
     stepperEngine.init(1);
