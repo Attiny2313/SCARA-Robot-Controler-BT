@@ -108,10 +108,19 @@ void loop() {
     updateEmergencyStop();
 
     // PL: Podczas startowego ustawiania HOME Z blokujemy MODE i TEACH na PCB,
-    //     aby nie dało się wejść do normalnej pracy z nieustalonym zerem osi Z.
-    // EN: MODE and TEACH panel buttons stay locked until startup Z HOME is confirmed.
-    // UA: Кнопки MODE і TEACH заблоковані до підтвердження стартового HOME осі Z.
-    if (!startupZHomeRequired) updatePanelButtons();
+    //     ale nadal synchronizujemy ich stan, aby wciśnięcie podczas homingu
+    //     nie zostało odczytane jako nowe zbocze natychmiast po zatwierdzeniu Z.
+    // EN: MODE and TEACH actions stay locked during startup Z HOME, while their
+    //     current levels are still tracked to avoid a delayed button edge.
+    // UA: Дії MODE і TEACH заблоковані під час HOME Z, але їх поточний стан
+    //     відстежується, щоб після підтвердження не виник хибний фронт.
+    if (!startupZHomeRequired) {
+        updatePanelButtons();
+    } else {
+        previousModeButton = digitalRead(PIN_BUTTON_MODE);
+        previousTeachButton = digitalRead(PIN_BUTTON_TEACH);
+        teachPressStartedMs = 0;
+    }
 
     updateActualRobotPosition();
     updateBluetoothLed();
