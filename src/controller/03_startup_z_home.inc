@@ -87,6 +87,14 @@ void processStartupZHome(float axisZ, bool confirmCombo, float deltaTimeSeconds)
             fmaxf(0.15f, fabsf(axisZ)) * STARTUP_Z_HOME_JOG_SPEED_MM_S;
         stepperZ->setSpeedInHz(stepHz(requestedSpeedMmS * STEPS_PER_MM_Z));
         stepperZ->moveTo(zMillimetersToSteps(startupZHomeTargetMm));
+    } else if (stepperZ->isRunning()) {
+        // PL: W tym specjalnym trybie po puszczeniu analogu zatrzymujemy Z od razu,
+        //     żeby operator mógł precyzyjnie ustawić fizyczne zero bez dojazdu
+        //     do wcześniej narastającego celu.
+        // EN: In startup homing, releasing the stick stops Z immediately for
+        //     precise manual zero positioning.
+        stepperZ->forceStop();
+        syncStartupZHomeTargetToActual();
     }
 
     // PL: A+B zatwierdza HOME tylko przy puszczonym analogu i zatrzymanej osi.
