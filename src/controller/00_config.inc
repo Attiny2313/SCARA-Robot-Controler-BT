@@ -135,8 +135,8 @@ constexpr float Z_MIN_MM = 0.0f;
 constexpr float Z_MAX_MM = 300.0f;
 constexpr float TOOL_ROTATE_MIN_DEG = 0.0f;
 constexpr float TOOL_ROTATE_MAX_DEG = 180.0f;
-constexpr float GRIP_MIN_DEG = 15.0f;
-constexpr float GRIP_MAX_DEG = 95.0f;
+constexpr float GRIP_MIN_DEG = 90.0f;
+constexpr float GRIP_MAX_DEG = 180.0f;
 
 // ============================================================
 // PL: PRĘDKOŚCI I PRZYSPIESZENIA
