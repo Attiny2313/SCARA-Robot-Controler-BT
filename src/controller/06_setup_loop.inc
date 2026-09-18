@@ -1,5 +1,7 @@
 // ============================================================
-// SETUP / INITIAL SETUP
+// PL: KONFIGURACJA POCZĄTKOWA
+// EN: INITIAL SETUP
+// UA: ПОЧАТКОВА ІНІЦІАЛІЗАЦІЯ
 // ============================================================
 void setup() {
     Serial.begin(115200);
@@ -27,6 +29,7 @@ void setup() {
     previousModeButton = digitalRead(PIN_BUTTON_MODE);
 
     // PL: BT LED startuje w stanie zgaszonym; updateBluetoothLed() rozpocznie miganie.
+    // EN: The BT LED starts off; updateBluetoothLed() will begin blinking.
     // UA: BT LED стартує вимкненим; updateBluetoothLed() запустить миготіння.
     digitalWrite(PIN_LED_BT, BT_LED_ACTIVE_LOW ? HIGH : LOW);
     digitalWrite(PIN_LED_ERROR, LOW);
@@ -70,6 +73,7 @@ void setup() {
     }
 
     updateActualRobotPosition();
+    beginStartupZHome();
 
     displayAvailable = initializeDisplay();
 
@@ -80,7 +84,9 @@ void setup() {
 
     Serial.println();
     Serial.println("SCARA Controller - DEV AUTO/TEACH");
-    Serial.println("UWAGA: HOME jest ręczny. Ustaw robot w HOME przed zasileniem/resetem.");
+    Serial.println("HOME ARM1/ARM2: ustaw recznie 0 deg przed zasileniem/resetem.");
+    Serial.println("HOME Z po restarcie: prawy analog Y = ruch Z, A+B = potwierdz Z=0.");
+    Serial.println("Do potwierdzenia Z normalne MANUAL/AUTO oraz przyciski panelu sa zablokowane.");
     Serial.println("MANUAL: START = JOINT/TOOL");
     Serial.println("TEACH: krótko = zapisz punkt, przytrzymaj 1.8 s = wyczyść program");
     Serial.println("MODE: MANUAL/AUTO");
@@ -94,7 +100,9 @@ void setup() {
 }
 
 // ============================================================
-// PĘTLA GŁÓWNA / MAIN LOOP
+// PL: PĘTLA GŁÓWNA
+// EN: MAIN LOOP
+// UA: ГОЛОВНИЙ ЦИКЛ
 // ============================================================
 void loop() {
     // PL: Bluepad32 musi być obsługiwany możliwie często.
@@ -103,7 +111,22 @@ void loop() {
     BP32.update();
 
     updateEmergencyStop();
-    updatePanelButtons();
+
+    // PL: Podczas startowego ustawiania HOME Z blokujemy MODE i TEACH na PCB,
+    //     ale nadal synchronizujemy ich stan, aby wciśnięcie podczas homingu
+    //     nie zostało odczytane jako nowe zbocze natychmiast po zatwierdzeniu Z.
+    // EN: MODE and TEACH actions stay locked during startup Z HOME, while their
+    //     current levels are still tracked to avoid a delayed button edge.
+    // UA: Дії MODE і TEACH заблоковані під час HOME Z, але їх поточний стан
+    //     відстежується, щоб після підтвердження не виник хибний фронт.
+    if (!startupZHomeRequired) {
+        updatePanelButtons();
+    } else {
+        previousModeButton = digitalRead(PIN_BUTTON_MODE);
+        previousTeachButton = digitalRead(PIN_BUTTON_TEACH);
+        teachPressStartedMs = 0;
+    }
+
     updateActualRobotPosition();
     updateBluetoothLed();
     refreshServos();

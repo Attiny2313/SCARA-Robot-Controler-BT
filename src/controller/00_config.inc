@@ -26,7 +26,9 @@
 #include <Adafruit_SSD1306.h>
 
 // ============================================================
-// PINY / PIN ASSIGNMENTS
+// PL: PINY
+// EN: PIN ASSIGNMENTS
+// UA: ПРИЗНАЧЕННЯ ВИВОДІВ
 // ============================================================
 constexpr uint8_t PIN_LED_BT       = 4;
 constexpr uint8_t PIN_LED_ERROR    = 16;
@@ -71,7 +73,9 @@ constexpr uint8_t PIN_ENDSTOP_ARM1 = 35;
 constexpr uint8_t PIN_ENDSTOP_ARM2 = 36;
 
 // ============================================================
-// KONFIGURACJA MECHANIKI / MECHANICAL CONFIGURATION
+// PL: KONFIGURACJA MECHANIKI
+// EN: MECHANICAL CONFIGURATION
+// UA: КОНФІГУРАЦІЯ МЕХАНІКИ
 // ============================================================
 constexpr float ARM_LENGTH_1_MM = 91.61f;
 constexpr float ARM_LENGTH_2_MM = 97.528f;
@@ -99,7 +103,9 @@ constexpr float STEPS_PER_MM_Z =
     MOTOR_STEPS_REV * MICROSTEPS * GEAR_Z / Z_SCREW_LEAD_MM;
 
 // ============================================================
-// RĘCZNY HOME / MANUAL HOME
+// PL: RĘCZNY HOME
+// EN: MANUAL HOME
+// UA: РУЧНЕ ВСТАНОВЛЕННЯ HOME
 // ============================================================
 // PL: Przed włączeniem lub resetem robot musi zostać ręcznie ustawiony
 //     w pozycji HOME. Program przyjmuje te wartości jako pozycję aktualną.
@@ -111,10 +117,12 @@ constexpr float HOME_ARM1_DEG = 0.0f;
 constexpr float HOME_ARM2_DEG = 0.0f;
 constexpr float HOME_Z_MM     = 0.0f;
 constexpr float HOME_TOOL_ROTATE_DEG = 90.0f;
-constexpr float HOME_GRIP_DEG        = 30.0f;
+constexpr float HOME_GRIP_DEG        = 90.0f;
 
 // ============================================================
-// OGRANICZENIA PROGRAMOWE / SOFTWARE LIMITS
+// PL: OGRANICZENIA PROGRAMOWE
+// EN: SOFTWARE LIMITS
+// UA: ПРОГРАМНІ ОБМЕЖЕННЯ
 // ============================================================
 // PL: Ograniczenia chronią mechanikę w trybach MANUAL, TOOL i AUTO.
 // EN: These limits protect the mechanism in MANUAL, TOOL and AUTO modes.
@@ -127,11 +135,13 @@ constexpr float Z_MIN_MM = 0.0f;
 constexpr float Z_MAX_MM = 300.0f;
 constexpr float TOOL_ROTATE_MIN_DEG = 0.0f;
 constexpr float TOOL_ROTATE_MAX_DEG = 180.0f;
-constexpr float GRIP_MIN_DEG = 15.0f;
-constexpr float GRIP_MAX_DEG = 95.0f;
+constexpr float GRIP_MIN_DEG = 90.0f;
+constexpr float GRIP_MAX_DEG = 180.0f;
 
 // ============================================================
-// PRĘDKOŚCI I PRZYSPIESZENIA / SPEEDS AND ACCELERATIONS
+// PL: PRĘDKOŚCI I PRZYSPIESZENIA
+// EN: SPEEDS AND ACCELERATIONS
+// UA: ШВИДКОСТІ ТА ПРИСКОРЕННЯ
 // ============================================================
 // PL: ARM1 i ARM2 mają tę samą prędkość kątową w sterowaniu ręcznym.
 // EN: ARM1 and ARM2 use the same angular speed in manual control.
@@ -181,13 +191,15 @@ constexpr float SERVO_FILTER_ALPHA = 0.20f;
 constexpr uint32_t ARM1_ACCEL = 12000;
 constexpr uint32_t ARM2_ACCEL = 5000;
 
-// PL: Przy 1600 STEP/mm: 3000 STEP/s² = 1.875 mm/s².
-// EN: At 1600 STEP/mm: 3000 STEP/s² = 1.875 mm/s².
-// UA: За 1600 STEP/мм: 3000 STEP/с² = 1,875 мм/с².
+// PL: Przy 1600 STEP/mm: 6000 STEP/s² = 3.75 mm/s².
+// EN: At 1600 STEP/mm: 6000 STEP/s² = 3.75 mm/s².
+// UA: За 1600 STEP/мм: 6000 STEP/с² = 3,75 мм/с².
 constexpr uint32_t Z_ACCEL    = 6000;
 
 // ============================================================
-// CZASY I AUTO / TIMING AND AUTO SETTINGS
+// PL: CZASY I AUTO
+// EN: TIMING AND AUTO SETTINGS
+// UA: ЧАСОВІ ПАРАМЕТРИ ТА НАЛАШТУВАННЯ AUTO
 // ============================================================
 constexpr uint32_t CONTROL_PERIOD_MS = 10;
 constexpr uint32_t SERVO_PERIOD_MS = 20;
@@ -203,7 +215,9 @@ constexpr uint8_t MAX_PROGRAM_POINTS = 20;
 constexpr bool AUTO_LOOP_PROGRAM = true;
 
 // ============================================================
-// STRUKTURY I STANY / DATA TYPES AND STATES
+// PL: STRUKTURY I STANY
+// EN: DATA TYPES AND STATES
+// UA: СТРУКТУРИ ТА СТАНИ
 // ============================================================
 enum class ControlMode : uint8_t {
     JOINT,
@@ -265,7 +279,9 @@ struct RobotState {
 };
 
 // ============================================================
-// OBIEKTY I STAN GLOBALNY / GLOBAL OBJECTS AND STATE
+// PL: OBIEKTY I STAN GLOBALNY
+// EN: GLOBAL OBJECTS AND STATE
+// UA: ГЛОБАЛЬНІ ОБ'ЄКТИ ТА СТАН
 // ============================================================
 FastAccelStepperEngine stepperEngine;
 FastAccelStepper* stepperArm1 = nullptr;

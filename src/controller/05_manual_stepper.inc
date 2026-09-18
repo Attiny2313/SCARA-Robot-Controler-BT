@@ -1,5 +1,7 @@
 // ============================================================
-// MANUAL JOINT I TOOL / MANUAL JOINT AND TOOL CONTROL
+// PL: RĘCZNE STEROWANIE JOINT I TOOL
+// EN: MANUAL JOINT AND TOOL CONTROL
+// UA: РУЧНЕ КЕРУВАННЯ JOINT І TOOL
 // ============================================================
 // PL: JOINT steruje osiami bezpośrednio: ARM1, ARM2 i Z.
 // EN: JOINT directly controls the ARM1, ARM2 and Z axes.
@@ -46,6 +48,17 @@ void processGamepad(float deltaTimeSeconds) {
     ControllerPtr controller = getActiveController();
 
     if (controller == nullptr) {
+        // PL: Jeżeli pad zniknie podczas ustawiania HOME Z, zapamiętaj aktualne
+        //     położenie jako nowy cel względny, aby po ponownym połączeniu Z
+        //     nie próbowało wracać do starego celu.
+        // EN: If the gamepad disconnects while setting Z HOME, remember the current
+        //     position as the new relative target so that after reconnecting Z
+        //     does not try to return to the old target.
+        // UA: Якщо геймпад від'єднається під час встановлення HOME осі Z, запам'ятати
+        //     поточне положення як нову відносну ціль, щоб після повторного підключення Z
+        //     не намагалася повернутися до старої цілі.
+        if (startupZHomeRequired) syncStartupZHomeTargetToActual();
+
         if (robot.operatingMode == OperatingMode::AUTO &&
             (robot.autoState == AutoState::MOVE || robot.autoState == AutoState::DWELL)) {
             pauseAuto("Brak pada - AUTO PAUSE");
@@ -71,6 +84,8 @@ void processGamepad(float deltaTimeSeconds) {
 
     // PL: Zapamiętuj D-pad także w MANUAL, aby przejście do AUTO z przytrzymanym
     //     kierunkiem nie zostało odczytane jako nowe naciśnięcie.
+    // EN: Remember the D-pad state also in MANUAL so that switching to AUTO while
+    //     a direction is held is not interpreted as a new press.
     // UA: Запам'ятовуй D-pad також у MANUAL, щоб перехід до AUTO з утримуваним
     //     напрямком не був розпізнаний як нове натискання.
     previousAutoDpad = dpad;
@@ -79,6 +94,7 @@ void processGamepad(float deltaTimeSeconds) {
 
     if (now - lastGamepadPacketMs > GAMEPAD_TIMEOUT_MS) {
         if (robot.gamepadArmed) emergencyStopMotion();
+        if (startupZHomeRequired) syncStartupZHomeTargetToActual();
         robot.gamepadArmed = false;
         gamepadNeutralSinceMs = 0;
         digitalWrite(PIN_LED_ERROR, HIGH);
@@ -87,6 +103,18 @@ void processGamepad(float deltaTimeSeconds) {
     }
 
     if (!updateGamepadArming(leftX, leftY, rightX, rightY, controller)) {
+        previousPadStart = padStart;
+        return;
+    }
+
+    // PL: Po restarcie normalne sterowanie jest zablokowane do czasu ręcznego
+    //     ustawienia Z. W tym etapie prawy analog Y porusza tylko osią Z,
+    //     a A+B przy zatrzymanej osi ustala bieżącą pozycję jako Z=0.
+    // EN: After restart, normal control stays locked until Z is manually homed.
+    // UA: Після перезапуску звичайне керування заблоковане до ручного HOME осі Z.
+    if (startupZHomeRequired) {
+        const bool confirmZHome = controller->a() && controller->b();
+        processStartupZHome(rightY, confirmZHome, deltaTimeSeconds);
         previousPadStart = padStart;
         return;
     }
@@ -108,7 +136,9 @@ void processGamepad(float deltaTimeSeconds) {
 }
 
 // ============================================================
-// INICJALIZACJA SILNIKÓW / STEPPER INITIALIZATION
+// PL: INICJALIZACJA SILNIKÓW KROKOWYCH
+// EN: STEPPER INITIALIZATION
+// UA: ІНІЦІАЛІЗАЦІЯ КРОКОВИХ ДВИГУНІВ
 // ============================================================
 bool initializeSteppers() {
     stepperEngine.init(1);
@@ -134,9 +164,13 @@ bool initializeSteppers() {
     stepperArm2->setAcceleration(ARM2_ACCEL);
     stepperZ->setAcceleration(Z_ACCEL);
 
-    // PL: Ręczny homing: operator ustawia robota w HOME przed startem.
-    // EN: Manual homing: operator places the robot in HOME before startup.
-    // UA: Ручне встановлення HOME: оператор встановлює робота в HOME перед запуском.
+    // PL: ARM1 i ARM2 nadal korzystają z ręcznego ustawienia HOME przed resetem.
+    //     Dla Z ta wartość jest tylko tymczasowym zerem względnym. Po starcie
+    //     operator dojeżdża osią Z padem do fizycznego HOME i zatwierdza A+B.
+    // EN: ARM1/ARM2 still use manual HOME before reset. Z receives only a
+    //     temporary relative zero here and is re-zeroed after A+B confirmation.
+    // UA: ARM1/ARM2 як і раніше вручну встановлюються в HOME перед скиданням.
+    //     Для Z тут задається лише тимчасовий відносний нуль до підтвердження A+B.
     stepperArm1->setCurrentPosition(arm1DegreesToSteps(HOME_ARM1_DEG));
     stepperArm2->setCurrentPosition(arm2DegreesToSteps(HOME_ARM2_DEG));
     stepperZ->setCurrentPosition(zMillimetersToSteps(HOME_Z_MM));
