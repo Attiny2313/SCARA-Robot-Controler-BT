@@ -70,6 +70,7 @@ void setup() {
     }
 
     updateActualRobotPosition();
+    beginStartupZHome();
 
     displayAvailable = initializeDisplay();
 
@@ -80,7 +81,9 @@ void setup() {
 
     Serial.println();
     Serial.println("SCARA Controller - DEV AUTO/TEACH");
-    Serial.println("UWAGA: HOME jest ręczny. Ustaw robot w HOME przed zasileniem/resetem.");
+    Serial.println("HOME ARM1/ARM2: ustaw recznie 0 deg przed zasileniem/resetem.");
+    Serial.println("HOME Z po restarcie: prawy analog Y = ruch Z, A+B = potwierdz Z=0.");
+    Serial.println("Do potwierdzenia Z normalne MANUAL/AUTO oraz przyciski panelu sa zablokowane.");
     Serial.println("MANUAL: START = JOINT/TOOL");
     Serial.println("TEACH: krótko = zapisz punkt, przytrzymaj 1.8 s = wyczyść program");
     Serial.println("MODE: MANUAL/AUTO");
@@ -103,7 +106,13 @@ void loop() {
     BP32.update();
 
     updateEmergencyStop();
-    updatePanelButtons();
+
+    // PL: Podczas startowego ustawiania HOME Z blokujemy MODE i TEACH na PCB,
+    //     aby nie dało się wejść do normalnej pracy z nieustalonym zerem osi Z.
+    // EN: MODE and TEACH panel buttons stay locked until startup Z HOME is confirmed.
+    // UA: Кнопки MODE і TEACH заблоковані до підтвердження стартового HOME осі Z.
+    if (!startupZHomeRequired) updatePanelButtons();
+
     updateActualRobotPosition();
     updateBluetoothLed();
     refreshServos();
