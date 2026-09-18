@@ -1,45 +1,134 @@
-name: Audit trilingual comments
+name: Normalize trilingual source comments
 
 on:
   push:
     branches: [dev]
     paths:
-      - 'src/**'
       - '.github/workflows/audit-comments.yml'
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
-  audit:
+  normalize:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Audit comment blocks
+
+      - name: Normalize source comments to PL EN UA
         shell: python
         run: |
-          import pathlib
+          from pathlib import Path
+
+          replacements = {
+              'src/controller/00_config.inc': {
+                  '// PINY / PIN ASSIGNMENTS': '// PL: PINY\n// EN: PIN ASSIGNMENTS\n// UA: ПРИЗНАЧЕННЯ ВИВОДІВ',
+                  '// KONFIGURACJA MECHANIKI / MECHANICAL CONFIGURATION': '// PL: KONFIGURACJA MECHANIKI\n// EN: MECHANICAL CONFIGURATION\n// UA: КОНФІГУРАЦІЯ МЕХАНІКИ',
+                  '// RĘCZNY HOME / MANUAL HOME': '// PL: RĘCZNY HOME\n// EN: MANUAL HOME\n// UA: РУЧНЕ ВСТАНОВЛЕННЯ HOME',
+                  '// OGRANICZENIA PROGRAMOWE / SOFTWARE LIMITS': '// PL: OGRANICZENIA PROGRAMOWE\n// EN: SOFTWARE LIMITS\n// UA: ПРОГРАМНІ ОБМЕЖЕННЯ',
+                  '// PRĘDKOŚCI I PRZYSPIESZENIA / SPEEDS AND ACCELERATIONS': '// PL: PRĘDKOŚCI I PRZYSPIESZENIA\n// EN: SPEEDS AND ACCELERATIONS\n// UA: ШВИДКОСТІ ТА ПРИСКОРЕННЯ',
+                  '// CZASY I AUTO / TIMING AND AUTO SETTINGS': '// PL: CZASY I AUTO\n// EN: TIMING AND AUTO SETTINGS\n// UA: ЧАСОВІ ПАРАМЕТРИ ТА НАЛАШТУВАННЯ AUTO',
+                  '// STRUKTURY I STANY / DATA TYPES AND STATES': '// PL: STRUKTURY I STANY\n// EN: DATA TYPES AND STATES\n// UA: СТРУКТУРИ ТА СТАНИ',
+                  '// OBIEKTY I STAN GLOBALNY / GLOBAL OBJECTS AND STATE': "// PL: OBIEKTY I STAN GLOBALNY\n// EN: GLOBAL OBJECTS AND STATE\n// UA: ГЛОБАЛЬНІ ОБ'ЄКТИ ТА СТАН",
+                  '// PL: Przy 1600 STEP/mm: 3000 STEP/s² = 1.875 mm/s².\n// EN: At 1600 STEP/mm: 3000 STEP/s² = 1.875 mm/s².\n// UA: За 1600 STEP/мм: 3000 STEP/с² = 1,875 мм/с².': '// PL: Przy 1600 STEP/mm: 6000 STEP/s² = 3.75 mm/s².\n// EN: At 1600 STEP/mm: 6000 STEP/s² = 3.75 mm/s².\n// UA: За 1600 STEP/мм: 6000 STEP/с² = 3,75 мм/с².',
+              },
+              'src/controller/01_motion.inc': {
+                  '// FUNKCJE POMOCNICZE / HELPER FUNCTIONS': '// PL: FUNKCJE POMOCNICZE\n// EN: HELPER FUNCTIONS\n// UA: ДОПОМІЖНІ ФУНКЦІЇ',
+                  '// KINEMATYKA / KINEMATICS': '// PL: KINEMATYKA\n// EN: KINEMATICS\n// UA: КІНЕМАТИКА',
+                  '// POZYCJA I RUCH / POSITION AND MOTION': '// PL: POZYCJA I RUCH\n// EN: POSITION AND MOTION\n// UA: ПОЛОЖЕННЯ ТА РУХ',
+              },
+              'src/controller/02_auto.inc': {
+                  '// PROGRAM TEACH I NVS / TEACH PROGRAM AND NVS STORAGE': '// PL: PROGRAM TEACH I NVS\n// EN: TEACH PROGRAM AND NVS STORAGE\n// UA: ПРОГРАМА TEACH ТА ЗБЕРІГАННЯ NVS',
+                  '// TRYB AUTOMATYCZNY / AUTOMATIC MODE': '// PL: TRYB AUTOMATYCZNY\n// EN: AUTOMATIC MODE\n// UA: АВТОМАТИЧНИЙ РЕЖИМ',
+                  '// E-STOP / EMERGENCY STOP': '// PL: E-STOP / ZATRZYMANIE AWARYJNE\n// EN: E-STOP / EMERGENCY STOP\n// UA: E-STOP / АВАРІЙНА ЗУПИНКА',
+              },
+              'src/controller/03_panel_bt.inc': {
+                  '// TRYBY I PANEL / MODES AND CONTROL PANEL': '// PL: TRYBY I PANEL\n// EN: MODES AND CONTROL PANEL\n// UA: РЕЖИМИ ТА ПАНЕЛЬ КЕРУВАННЯ',
+                  '// BLUEPAD32 I PAD / BLUEPAD32 AND GAMEPAD': '// PL: BLUEPAD32 I PAD\n// EN: BLUEPAD32 AND GAMEPAD\n// UA: BLUEPAD32 ТА ГЕЙМПАД',
+              },
+              'src/controller/03_startup_z_home.inc': {
+                  '// STARTOWE USTAWIANIE HOME Z / STARTUP Z HOME ASSIST': '// PL: STARTOWE USTAWIANIE HOME Z\n// EN: STARTUP Z HOME ASSIST\n// UA: СТАРТОВЕ ВСТАНОВЛЕННЯ HOME ОСІ Z',
+                  '    // PL: Po A+B pad jest ponownie rozbrajany. Operator musi puścić przyciski\n    //     i pozostawić pad neutralny przez standardowy czas uzbrajania.': '    // PL: Po A+B pad jest ponownie rozbrajany. Operator musi puścić przyciski\n    //     i pozostawić pad neutralny przez standardowy czas uzbrajania.\n    // EN: After A+B the gamepad is disarmed again. The operator must release the buttons\n    //     and keep the gamepad neutral for the standard arming time.\n    // UA: Після A+B геймпад знову роззброюється. Оператор повинен відпустити кнопки\n    //     і тримати геймпад у нейтральному положенні протягом стандартного часу озброєння.',
+                  '    // PL: W czasie ustawiania HOME Z nie stosujemy normalnych limitów Z,\n    //     bo pozycja absolutna nie jest jeszcze znana. Ograniczamy jedynie\n    //     maksymalny ruch wzgledem punktu startowego.\n    // EN: Normal Z limits are not used before HOME is known; only a relative\n    //     startup travel guard is applied.': '    // PL: W czasie ustawiania HOME Z nie stosujemy normalnych limitów Z,\n    //     bo pozycja absolutna nie jest jeszcze znana. Ograniczamy jedynie\n    //     maksymalny ruch względem punktu startowego.\n    // EN: Normal Z limits are not used before HOME is known; only a relative\n    //     startup travel guard is applied.\n    // UA: Під час встановлення HOME осі Z звичайні межі Z не застосовуються,\n    //     оскільки абсолютне положення ще невідоме. Обмежується лише максимальний\n    //     відносний хід від початкової точки.',
+                  '        // PL: W tym specjalnym trybie po puszczeniu analogu zatrzymujemy Z od razu,\n        //     żeby operator mógł precyzyjnie ustawić fizyczne zero bez dojazdu\n        //     do wcześniej narastającego celu.\n        // EN: In startup homing, releasing the stick stops Z immediately for\n        //     precise manual zero positioning.': '        // PL: W tym specjalnym trybie po puszczeniu analogu zatrzymujemy Z od razu,\n        //     żeby operator mógł precyzyjnie ustawić fizyczne zero bez dojazdu\n        //     do wcześniej narastającego celu.\n        // EN: In startup homing, releasing the stick stops Z immediately for\n        //     precise manual zero positioning.\n        // UA: У цьому спеціальному режимі після відпускання стіка вісь Z зупиняється\n        //     негайно, щоб оператор міг точно встановити фізичний нуль без руху\n        //     до попередньо накопиченої цільової позиції.',
+              },
+              'src/controller/04_oled.inc': {
+                  '// SERWA NARZĘDZIA / TOOL SERVOS': '// PL: SERWA NARZĘDZIA\n// EN: TOOL SERVOS\n// UA: СЕРВОПРИВОДИ ІНСТРУМЕНТА',
+                  '// WYŚWIETLACZ OLED I2C / I2C OLED DISPLAY': '// PL: WYŚWIETLACZ OLED I2C\n// EN: I2C OLED DISPLAY\n// UA: OLED-ДИСПЛЕЙ I2C',
+              },
+              'src/controller/05_manual_stepper.inc': {
+                  '// MANUAL JOINT I TOOL / MANUAL JOINT AND TOOL CONTROL': '// PL: RĘCZNE STEROWANIE JOINT I TOOL\n// EN: MANUAL JOINT AND TOOL CONTROL\n// UA: РУЧНЕ КЕРУВАННЯ JOINT І TOOL',
+                  '        // PL: Jeżeli pad zniknie podczas ustawiania HOME Z, zapamiętaj aktualne\n        //     położenie jako nowy cel względny, aby po ponownym połączeniu Z\n        //     nie próbowało wracać do starego celu.': "        // PL: Jeżeli pad zniknie podczas ustawiania HOME Z, zapamiętaj aktualne\n        //     położenie jako nowy cel względny, aby po ponownym połączeniu Z\n        //     nie próbowało wracać do starego celu.\n        // EN: If the gamepad disconnects while setting Z HOME, remember the current\n        //     position as the new relative target so that after reconnecting Z\n        //     does not try to return to the old target.\n        // UA: Якщо геймпад від'єднається під час встановлення HOME осі Z, запам'ятати\n        //     поточне положення як нову відносну ціль, щоб після повторного підключення Z\n        //     не намагалася повернутися до старої цілі.",
+                  "    // PL: Zapamiętuj D-pad także w MANUAL, aby przejście do AUTO z przytrzymanym\n    //     kierunkiem nie zostało odczytane jako nowe naciśnięcie.\n    // UA: Запам'ятовуй D-pad також у MANUAL, щоб перехід до AUTO з утримуваним\n    //     напрямком не був розпізнаний як нове натискання.": "    // PL: Zapamiętuj D-pad także w MANUAL, aby przejście do AUTO z przytrzymanym\n    //     kierunkiem nie zostało odczytane jako nowe naciśnięcie.\n    // EN: Remember the D-pad state also in MANUAL so that switching to AUTO while\n    //     a direction is held is not interpreted as a new press.\n    // UA: Запам'ятовуй D-pad також у MANUAL, щоб перехід до AUTO з утримуваним\n    //     напрямком не був розпізнаний як нове натискання.",
+                  '// INICJALIZACJA SILNIKÓW / STEPPER INITIALIZATION': '// PL: INICJALIZACJA SILNIKÓW KROKOWYCH\n// EN: STEPPER INITIALIZATION\n// UA: ІНІЦІАЛІЗАЦІЯ КРОКОВИХ ДВИГУНІВ',
+              },
+              'src/controller/06_setup_loop.inc': {
+                  '// SETUP / INITIAL SETUP': '// PL: KONFIGURACJA POCZĄTKOWA\n// EN: INITIAL SETUP\n// UA: ПОЧАТКОВА ІНІЦІАЛІЗАЦІЯ',
+                  '    // PL: BT LED startuje w stanie zgaszonym; updateBluetoothLed() rozpocznie miganie.\n    // UA: BT LED стартує вимкненим; updateBluetoothLed() запустить миготіння.': '    // PL: BT LED startuje w stanie zgaszonym; updateBluetoothLed() rozpocznie miganie.\n    // EN: The BT LED starts off; updateBluetoothLed() will begin blinking.\n    // UA: BT LED стартує вимкненим; updateBluetoothLed() запустить миготіння.',
+                  '// PĘTLA GŁÓWNA / MAIN LOOP': '// PL: PĘTLA GŁÓWNA\n// EN: MAIN LOOP\n// UA: ГОЛОВНИЙ ЦИКЛ',
+              },
+              'src/controller/logo_pp_oled.h': {
+                  '// PP logo converted from Logo.png for SSD1306 128x64.\n// Source black pixels are rendered as white OLED pixels.': '// PL: Logo PP przekonwertowane z Logo.png dla SSD1306 128x64.\n//     Czarne piksele źródła są wyświetlane jako białe piksele OLED.\n// EN: PP logo converted from Logo.png for SSD1306 128x64.\n//     Source black pixels are rendered as white OLED pixels.\n// UA: Логотип PP перетворено з Logo.png для SSD1306 128x64.\n//     Чорні пікселі джерела відображаються як білі пікселі OLED.',
+              },
+              'src/main.cpp': {
+                  '// SCARA Robot Controller / Sterownik robota SCARA\n//\n// PL: Implementacja jest podzielona na sekcje .inc, ale wszystkie są dołączane\n//     do jednej jednostki kompilacji. Kolejność include ma znaczenie.\n// UA: Реалізацію поділено на секції .inc, але всі вони підключаються\n//     до однієї одиниці компіляції. Порядок include має значення.': '// ============================================================\n// PL: STEROWNIK ROBOTA SCARA\n// EN: SCARA ROBOT CONTROLLER\n// UA: КОНТРОЛЕР РОБОТА SCARA\n// ============================================================\n//\n// PL: Implementacja jest podzielona na sekcje .inc, ale wszystkie są dołączane\n//     do jednej jednostki kompilacji. Kolejność include ma znaczenie.\n// EN: The implementation is split into .inc sections, but all of them are included\n//     in a single compilation unit. Include order matters.\n// UA: Реалізацію поділено на секції .inc, але всі вони підключаються\n//     до однієї одиниці компіляції. Порядок include має значення.',
+              },
+          }
+
+          changed = []
+          for name, mapping in replacements.items():
+              p = Path(name)
+              text = p.read_text(encoding='utf-8')
+              original = text
+              for old, new in mapping.items():
+                  if old not in text:
+                      raise SystemExit(f'Missing expected comment in {name}: {old[:80]!r}')
+                  text = text.replace(old, new, 1)
+              if text != original:
+                  p.write_text(text, encoding='utf-8', newline='\n')
+                  changed.append(name)
+
+          print('Changed files:')
+          for name in changed:
+              print(' -', name)
+
+      - name: Verify all source comment blocks
+        shell: python
+        run: |
+          from pathlib import Path
           exts={'.cpp','.h','.hpp','.inc'}
-          for p in sorted(pathlib.Path('src').rglob('*')):
+          errors=[]
+          for p in sorted(Path('src').rglob('*')):
               if p.suffix not in exts: continue
               lines=p.read_text(encoding='utf-8').splitlines()
-              print(f'=== {p} ===')
               for n,line in enumerate(lines,1):
                   s=line.lstrip()
                   if s.startswith('//') and ' / ' in s and not any(tag in s for tag in ('PL:','EN:','UA:')):
-                      print(f'SECTION {n}: {line}')
+                      errors.append(f'{p}:{n}: untranslated section line: {line}')
               i=0
               while i < len(lines):
-                  s=lines[i].lstrip()
-                  if not s.startswith('//'):
+                  if not lines[i].lstrip().startswith('//'):
                       i+=1; continue
                   start=i
                   block=[]
                   while i < len(lines) and lines[i].lstrip().startswith('//'):
-                      block.append(lines[i])
-                      i+=1
-                  text='\n'.join(block)
+                      block.append(lines[i]); i+=1
                   meaningful=[x for x in block if x.strip('/').strip() and set(x.strip()) != {'/','='}]
                   if not meaningful: continue
-                  if 'PL:' in text and 'EN:' in text and 'UA:' in text:
-                      continue
-                  print(f'MISSING {start+1}-{i}:')
-                  print(text)
+                  text='\n'.join(block)
+                  if not all(tag in text for tag in ('PL:','EN:','UA:')):
+                      errors.append(f'{p}:{start+1}-{i}: missing PL/EN/UA')
+          if errors:
+              print('\n'.join(errors))
+              raise SystemExit(1)
+          print('All source comment blocks contain PL, EN and UA variants.')
+
+      - name: Remove temporary workflow and commit
+        run: |
+          rm .github/workflows/audit-comments.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src .github/workflows/audit-comments.yml
+          git commit -m "Normalize source comments in Polish English and Ukrainian"
+          git push
