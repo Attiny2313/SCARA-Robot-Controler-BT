@@ -9,6 +9,7 @@
 #include "controller/01_motion.inc"
 #include "controller/02_auto.inc"
 #include "controller/03_panel_bt.inc"
+#include "controller/03_startup_z_home.inc"
 #include "controller/04_oled.inc"
 #include "controller/05_manual_stepper.inc"
 #include "controller/06_setup_loop.inc"
