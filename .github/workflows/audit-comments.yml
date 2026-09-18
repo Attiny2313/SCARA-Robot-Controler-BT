@@ -1,0 +1,41 @@
+name: Audit trilingual comments
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - 'src/**'
+      - '.github/workflows/audit-comments.yml'
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Audit comment blocks
+        shell: python
+        run: |
+          import pathlib, re
+          exts={'.cpp','.h','.hpp','.inc'}
+          for p in sorted(pathlib.Path('src').rglob('*')):
+              if p.suffix not in exts: continue
+              lines=p.read_text(encoding='utf-8').splitlines()
+              i=0
+              while i < len(lines):
+                  s=lines[i].lstrip()
+                  if not s.startswith('//'):
+                      i+=1; continue
+                  start=i
+                  block=[]
+                  while i < len(lines) and lines[i].lstrip().startswith('//'):
+                      block.append(lines[i])
+                      i+=1
+                  text='\n'.join(block)
+                  meaningful=[x for x in block if x.strip('/') .strip() and set(x.strip()) != {'/','='}]
+                  if not meaningful: continue
+                  if 'PL:' in text and 'EN:' in text and 'UA:' in text:
+                      continue
+                  print(f'--- {p}:{start+1}-{i} ---')
+                  print(text)
+          
