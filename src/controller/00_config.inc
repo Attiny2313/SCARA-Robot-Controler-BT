@@ -117,7 +117,7 @@ constexpr float HOME_ARM1_DEG = 0.0f;
 constexpr float HOME_ARM2_DEG = 0.0f;
 constexpr float HOME_Z_MM     = 0.0f;
 constexpr float HOME_TOOL_ROTATE_DEG = 90.0f;
-constexpr float HOME_GRIP_DEG        = 30.0f;
+constexpr float HOME_GRIP_DEG        = 90.0f;
 
 // ============================================================
 // PL: OGRANICZENIA PROGRAMOWE
