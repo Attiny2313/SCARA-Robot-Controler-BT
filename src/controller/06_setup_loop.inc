@@ -11,6 +11,15 @@ void setup() {
     pinMode(PIN_LED_ERROR, OUTPUT);
     pinMode(PIN_LED_STATUS, OUTPUT);
 
+    // PL: Ustaw stan nieaktywny przekaźnika jeszcze przed przełączeniem GPIO5 na OUTPUT,
+    //     aby ograniczyć ryzyko krótkiego impulsu przy starcie.
+    // EN: Preload the inactive relay level before switching GPIO5 to OUTPUT to reduce
+    //     the chance of a short activation pulse during startup.
+    // UA: Заздалегідь встановити неактивний рівень реле перед перемиканням GPIO5 у OUTPUT,
+    //     щоб зменшити ризик короткого імпульсу під час запуску.
+    digitalWrite(PIN_RELAY, RELAY_ACTIVE_LOW ? HIGH : LOW);
+    pinMode(PIN_RELAY, OUTPUT);
+
     // PL: Oba przyciski na PCB podają HIGH po wciśnięciu.
     // EN: Both PCB buttons drive the input HIGH when pressed.
     // UA: Обидві кнопки на PCB подають HIGH після натискання.
@@ -41,6 +50,7 @@ void setup() {
     robot.estopLatched = false;
     robot.controllerConnected = false;
     robot.gamepadArmed = false;
+    setRelayState(false);
 
     robot.joints = {HOME_ARM1_DEG, HOME_ARM2_DEG, HOME_Z_MM};
     robot.actualJoints = robot.joints;
@@ -88,9 +98,11 @@ void setup() {
     Serial.println("HOME Z po restarcie: prawy analog Y = ruch Z, A+B = potwierdz Z=0.");
     Serial.println("Do potwierdzenia Z normalne MANUAL/AUTO oraz przyciski panelu sa zablokowane.");
     Serial.println("MANUAL: START = JOINT/TOOL");
-    Serial.println("TEACH: krótko = zapisz punkt, przytrzymaj 1.8 s = wyczyść program");
+    Serial.println("MANUAL: X = przelacz RELAY na GPIO5");
+    Serial.println("TEACH: krótko = zapisz punkt razem ze stanem RELAY, przytrzymaj 1.8 s = wyczyść program");
     Serial.println("MODE: MANUAL/AUTO");
     Serial.println("AUTO: START = start/pause/resume; program pracuje w pętli");
+    Serial.println("AUTO: każdy punkt odtwarza także zapisany stan RELAY");
     Serial.println("AUTO SPEED: D-pad UP/DOWN = +/-10%, LEFT = 100% (50..250%)");
     Serial.println("BT LED: stale = pad polaczony, miganie = oczekiwanie");
     Serial.printf("Wczytano %u punktów programu\n", programPointCount);
