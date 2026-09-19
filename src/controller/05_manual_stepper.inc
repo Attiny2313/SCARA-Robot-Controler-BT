@@ -73,12 +73,14 @@ void processGamepad(float deltaTimeSeconds) {
     const float rightX = normalizeJoystick(controller->axisRX());
     const float rightY = normalizeJoystick(controller->axisRY());
     const bool padStart = controller->miscStart();
+    const bool padX = controller->x();
     const uint8_t dpad = controller->dpad();
 
     if (robot.operatingMode == OperatingMode::AUTO) {
         processAutoSpeedDpad(dpad);
         if (padStart && !previousPadStart) toggleAutoRunPause();
         previousPadStart = padStart;
+        previousPadX = padX;
         return;
     }
 
@@ -97,6 +99,7 @@ void processGamepad(float deltaTimeSeconds) {
         if (startupZHomeRequired) syncStartupZHomeTargetToActual();
         robot.gamepadArmed = false;
         gamepadNeutralSinceMs = 0;
+        previousPadX = padX;
         digitalWrite(PIN_LED_ERROR, HIGH);
         Serial.println("Timeout pada - MANUAL zatrzymany");
         return;
@@ -104,6 +107,7 @@ void processGamepad(float deltaTimeSeconds) {
 
     if (!updateGamepadArming(leftX, leftY, rightX, rightY, controller)) {
         previousPadStart = padStart;
+        previousPadX = padX;
         return;
     }
 
@@ -116,11 +120,21 @@ void processGamepad(float deltaTimeSeconds) {
         const bool confirmZHome = controller->a() && controller->b();
         processStartupZHome(rightY, confirmZHome, deltaTimeSeconds);
         previousPadStart = padStart;
+        previousPadX = padX;
         return;
     }
 
     if (padStart && !previousPadStart) toggleControlMode();
     previousPadStart = padStart;
+
+    // PL: X przełącza przekaźnik tylko w MANUAL. Stan jest zapamiętywany przez TEACH.
+    // EN: X toggles the relay only in MANUAL. TEACH stores the resulting relay state.
+    // UA: X перемикає реле лише в MANUAL. TEACH зберігає отриманий стан реле.
+    if (padX && !previousPadX) {
+        setRelayState(!robot.relayOn);
+        Serial.printf("MANUAL RELAY GPIO%d: %s\n", PIN_RELAY, robot.relayOn ? "ON" : "OFF");
+    }
+    previousPadX = padX;
 
     float gripCommand = 0.0f;
     if (controller->a()) gripCommand = 1.0f;
