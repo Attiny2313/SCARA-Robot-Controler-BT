@@ -33,12 +33,18 @@
 constexpr uint8_t PIN_LED_BT       = 4;
 constexpr uint8_t PIN_LED_ERROR    = 16;
 constexpr uint8_t PIN_LED_STATUS   = 17;
+constexpr uint8_t PIN_RELAY        = 5;
 
 // PL: Dioda BT na obecnej płytce jest sterowana aktywnym stanem wysokim.
 // EN: The BT LED on the current board is active-high.
 // UA: Світлодіод BT на поточній платі активується високим рівнем.
 constexpr bool BT_LED_ACTIVE_LOW = false;
 constexpr uint32_t BT_LED_BLINK_MS = 500;
+
+// PL: Ustaw true, jeżeli zastosowany moduł przekaźnika jest aktywny stanem LOW.
+// EN: Set true when the installed relay module is active-low.
+// UA: Встановіть true, якщо використаний модуль реле активується рівнем LOW.
+constexpr bool RELAY_ACTIVE_LOW = false;
 
 constexpr uint8_t PIN_I2C_SDA = 21;
 constexpr uint8_t PIN_I2C_SCL = 22;
@@ -250,13 +256,14 @@ struct CartesianPosition {
     float zMm;
 };
 
-// PL: Jeden punkt programu zawiera pozycję osi, pozycje serw i czas postoju.
-// EN: One program point stores joint positions, servo targets and dwell time.
-// UA: Одна точка програми зберігає положення осей, цільові положення сервоприводів і час паузи.
+// PL: Jeden punkt programu zawiera pozycję osi, pozycje serw, stan przekaźnika i czas postoju.
+// EN: One program point stores joint positions, servo targets, relay state and dwell time.
+// UA: Одна точка програми зберігає положення осей, цілі сервоприводів, стан реле і час паузи.
 struct ProgramPoint {
     JointPosition joints;
     float toolRotateDeg;
     float gripperDeg;
+    uint8_t relayOn;
     uint32_t dwellMs;
 };
 
@@ -276,6 +283,7 @@ struct RobotState {
     bool estopLatched;
     bool controllerConnected;
     bool gamepadArmed;
+    bool relayOn;
 };
 
 // ============================================================
@@ -324,3 +332,13 @@ uint8_t displayI2cAddress = 0;
 bool previousModeButton = LOW;
 bool previousTeachButton = LOW;
 bool previousPadStart = false;
+bool previousPadX = false;
+
+// PL: Centralna funkcja ustawia logiczny stan przekaźnika i uwzględnia polaryzację modułu.
+// EN: Central relay setter stores the logical state and applies module polarity.
+// UA: Центральна функція встановлює логічний стан реле та враховує полярність модуля.
+void setRelayState(bool on) {
+    robot.relayOn = on;
+    const bool pinHigh = RELAY_ACTIVE_LOW ? !on : on;
+    digitalWrite(PIN_RELAY, pinHigh ? HIGH : LOW);
+}
