@@ -6,6 +6,7 @@
 bool programPointValid(const ProgramPoint& p) {
     return jointPositionFinite(p.joints) &&
            isfinite(p.toolRotateDeg) && isfinite(p.gripperDeg) &&
+           p.relayOn <= 1 &&
            p.joints.arm1Deg >= ARM1_MIN_DEG && p.joints.arm1Deg <= ARM1_MAX_DEG &&
            p.joints.arm2Deg >= ARM2_MIN_DEG && p.joints.arm2Deg <= ARM2_MAX_DEG &&
            p.joints.zMm >= Z_MIN_MM && p.joints.zMm <= Z_MAX_MM;
@@ -85,6 +86,7 @@ void teachCurrentPoint() {
     p.joints = robot.actualJoints;
     p.toolRotateDeg = robot.toolRotateDeg;
     p.gripperDeg = robot.gripperDeg;
+    p.relayOn = robot.relayOn ? 1 : 0;
     p.dwellMs = DEFAULT_POINT_DWELL_MS;
 
     if (!programPointValid(p)) {
@@ -95,10 +97,11 @@ void teachCurrentPoint() {
     programPointCount++;
     saveProgram();
 
-    Serial.printf("TEACH: zapisano P%02u  A1=%.2f A2=%.2f Z=%.2f ROT=%.1f GRIP=%.1f\n",
+    Serial.printf("TEACH: zapisano P%02u  A1=%.2f A2=%.2f Z=%.2f ROT=%.1f GRIP=%.1f RELAY=%s\n",
                   programPointCount,
                   p.joints.arm1Deg, p.joints.arm2Deg, p.joints.zMm,
-                  p.toolRotateDeg, p.gripperDeg);
+                  p.toolRotateDeg, p.gripperDeg,
+                  p.relayOn ? "ON" : "OFF");
 }
 
 // ============================================================
@@ -200,6 +203,12 @@ void startCurrentProgramPoint() {
                                     TOOL_ROTATE_MIN_DEG, TOOL_ROTATE_MAX_DEG);
     robot.gripperDeg = clampFloat(p.gripperDeg,
                                  GRIP_MIN_DEG, GRIP_MAX_DEG);
+
+    // PL: Stan przekaźnika jest częścią punktu TEACH i zmienia się na początku ruchu do punktu.
+    // EN: Relay state is part of the TEACH point and changes when motion to the point starts.
+    // UA: Стан реле є частиною точки TEACH і змінюється на початку руху до точки.
+    setRelayState(p.relayOn != 0);
+
     commandAutoJointPosition(p.joints);
 
     if (!jointPositionFinite(robot.joints)) {
@@ -209,8 +218,9 @@ void startCurrentProgramPoint() {
 
     autoMotionStarted = true;
 
-    Serial.printf("AUTO -> P%02u/%02u\n",
-                  currentProgramPoint + 1, programPointCount);
+    Serial.printf("AUTO -> P%02u/%02u  RELAY=%s\n",
+                  currentProgramPoint + 1, programPointCount,
+                  robot.relayOn ? "ON" : "OFF");
 }
 
 // PL: Maszyna stanów AUTO: ruch -> postój -> kolejny punkt.
@@ -277,10 +287,11 @@ void updateEmergencyStop() {
         robot.estopLatched = true;
         robot.gamepadArmed = false;
         emergencyStopMotion();
+        setRelayState(false);
         robot.autoState = AutoState::FAULT;
         digitalWrite(PIN_LED_ERROR, HIGH);
         digitalWrite(PIN_LED_STATUS, LOW);
-        Serial.println("E-STOP AKTYWNY - wymagany restart sterownika");
+        Serial.println("E-STOP AKTYWNY - wymagany restart sterownika; RELAY=OFF");
     }
 }
 
