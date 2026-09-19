@@ -27,6 +27,7 @@ void toggleOperatingMode() {
         robot.autoState = AutoState::IDLE;
         robot.gamepadArmed = false;
         previousPadStart = false;
+        previousPadX = false;
         Serial.printf("Tryb pracy: AUTO (%u punktów). START = uruchom/pauza\n",
                       programPointCount);
     } else {
@@ -37,6 +38,7 @@ void toggleOperatingMode() {
         robot.gamepadArmed = false;
         gamepadNeutralSinceMs = 0;
         previousPadStart = false;
+        previousPadX = false;
         updateActualRobotPosition();
         robot.joints = robot.actualJoints;
         robot.tcp = robot.actualTcp;
@@ -62,6 +64,7 @@ void printCurrentPosition() {
                   robot.actualTcp.xMm, robot.actualTcp.yMm);
     Serial.printf("ROT: %.1f  GRIP: %.1f\n",
                   robot.toolRotateDeg, robot.gripperDeg);
+    Serial.printf("RELAY GPIO%d: %s\n", PIN_RELAY, robot.relayOn ? "ON" : "OFF");
     Serial.printf("WORK: %s  MANUAL: %s\n",
                   robot.operatingMode == OperatingMode::AUTO ? "AUTO" : "MANUAL",
                   robot.controlMode == ControlMode::TOOL ? "TOOL" : "JOINT");
@@ -174,6 +177,8 @@ void onConnectedController(ControllerPtr controller) {
             lastGamepadPacketMs = millis();
             robot.gamepadArmed = false;
             gamepadNeutralSinceMs = 0;
+            previousPadStart = false;
+            previousPadX = false;
             updateControllerConnectedFlag();
             Serial.printf("Pad podłączony, slot: %d\n", i);
             return;
@@ -188,6 +193,9 @@ void onDisconnectedController(ControllerPtr controller) {
     for (int i = 0; i < BP32_MAX_GAMEPADS; i++) {
         if (controllers[i] == controller) controllers[i] = nullptr;
     }
+
+    previousPadStart = false;
+    previousPadX = false;
 
     if (robot.operatingMode == OperatingMode::AUTO) {
         pauseAuto("Pad rozłączony - AUTO PAUSE");
@@ -204,15 +212,16 @@ bool gamepadControlsNeutral(float leftX, float leftY, float rightX, float rightY
                             ControllerPtr controller) {
     return leftX == 0.0f && leftY == 0.0f &&
            rightX == 0.0f && rightY == 0.0f &&
-           !controller->a() && !controller->b() && !controller->miscStart();
+           !controller->a() && !controller->b() && !controller->x() &&
+           !controller->miscStart();
 }
 
 // PL: Po połączeniu pad musi przez chwilę pozostawać neutralny.
-//     Zapobiega to przypadkowemu ruchowi tuż po sparowaniu.
+//     Zapobiega to przypadkowemu ruchowi lub przełączeniu przekaźnika tuż po sparowaniu.
 // EN: After connection the gamepad must remain neutral briefly.
-//     This prevents unintended motion immediately after pairing.
-// UA: Після підключення геймпад повинен короткий час залишатися в нейтральному стані.
-//     Це запобігає випадковому руху одразу після спарювання.
+//     This prevents unintended motion or relay switching immediately after pairing.
+// UA: Після підключення геймпад повинен короткий час залишатися нейтральним.
+//     Це запобігає випадковому руху або перемиканню реле одразу після спарювання.
 bool updateGamepadArming(float leftX, float leftY, float rightX, float rightY,
                          ControllerPtr controller) {
     if (robot.operatingMode != OperatingMode::MANUAL) return false;
@@ -232,6 +241,7 @@ bool updateGamepadArming(float leftX, float leftY, float rightX, float rightY,
     if (now - gamepadNeutralSinceMs >= GAMEPAD_ARM_NEUTRAL_MS) {
         robot.gamepadArmed = true;
         previousPadStart = controller->miscStart();
+        previousPadX = controller->x();
         digitalWrite(PIN_LED_ERROR, LOW);
         Serial.println("Pad ARMED - MANUAL aktywny");
         return true;
