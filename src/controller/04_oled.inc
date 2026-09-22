@@ -189,15 +189,23 @@ void refreshDisplay() {
         display.print(robot.controlMode == ControlMode::TOOL ? "TOOL" : "JOINT");
     }
 
+    // PL: Stan przekaźnika jest stale widoczny jako R:ON / R:OFF.
+    // EN: Relay state is always visible as R:ON / R:OFF.
+    // UA: Стан реле постійно відображається як R:ON / R:OFF.
     display.setCursor(0, 10);
     display.print("BT:");
     display.print(robot.controllerConnected ? "OK" : "WAIT");
-    display.print(" T:");
-    display.print(programPointCount);
     if (robot.operatingMode == OperatingMode::AUTO) {
+        display.print(" R:");
+        display.print(robot.relayOn ? "ON" : "OFF");
         display.print(" S:");
         display.print(autoArmSpeedPercent);
         display.print('%');
+    } else {
+        display.print(" T:");
+        display.print(programPointCount);
+        display.print(" R:");
+        display.print(robot.relayOn ? "ON" : "OFF");
     }
 
     display.setCursor(0, 20);
