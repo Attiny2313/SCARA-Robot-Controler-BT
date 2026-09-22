@@ -3,6 +3,8 @@
 // EN: TEACH PROGRAM AND NVS STORAGE
 // UA: ПРОГРАМА TEACH ТА ЗБЕРІГАННЯ NVS
 // ============================================================
+constexpr uint32_t AUTO_TOOL_ACTION_DWELL_MS = 500;
+
 bool programPointValid(const ProgramPoint& p) {
     return jointPositionFinite(p.joints) &&
            isfinite(p.toolRotateDeg) && isfinite(p.gripperDeg) &&
@@ -199,15 +201,14 @@ void startCurrentProgramPoint() {
         return;
     }
 
+    // PL: Serwo obrotu może zmieniać pozycję podczas dojazdu. Serwo 2 (chwytak)
+    //     i przekaźnik są wykonywane dopiero po osiągnięciu punktu.
+    // EN: The rotation servo may move during travel. Servo 2 (gripper) and the
+    //     relay are applied only after the point has been reached.
+    // UA: Серво обертання може рухатися під час переміщення. Серво 2 (захват)
+    //     і реле спрацьовують лише після досягнення точки.
     robot.toolRotateDeg = clampFloat(p.toolRotateDeg,
                                     TOOL_ROTATE_MIN_DEG, TOOL_ROTATE_MAX_DEG);
-    robot.gripperDeg = clampFloat(p.gripperDeg,
-                                 GRIP_MIN_DEG, GRIP_MAX_DEG);
-
-    // PL: Stan przekaźnika jest częścią punktu TEACH i zmienia się na początku ruchu do punktu.
-    // EN: Relay state is part of the TEACH point and changes when motion to the point starts.
-    // UA: Стан реле є частиною точки TEACH і змінюється на початку руху до точки.
-    setRelayState(p.relayOn != 0);
 
     commandAutoJointPosition(p.joints);
 
@@ -218,15 +219,22 @@ void startCurrentProgramPoint() {
 
     autoMotionStarted = true;
 
-    Serial.printf("AUTO -> P%02u/%02u  RELAY=%s\n",
-                  currentProgramPoint + 1, programPointCount,
-                  robot.relayOn ? "ON" : "OFF");
+    Serial.printf("AUTO -> P%02u/%02u\n",
+                  currentProgramPoint + 1, programPointCount);
 }
 
-// PL: Maszyna stanów AUTO: ruch -> postój -> kolejny punkt.
-// EN: AUTO state machine: move -> dwell -> next point.
-// UA: Автомат станів AUTO: рух -> пауза -> наступна точка.
+// PL: Maszyna stanów AUTO: ruch -> akcja narzędzia -> postój -> kolejny punkt.
+//     Jeżeli w punkcie zmienia się przekaźnik lub serwo 2, po tej zmianie
+//     wymuszany jest postój co najmniej 500 ms.
+// EN: AUTO state machine: move -> tool action -> dwell -> next point.
+//     If the relay or servo 2 changes at a point, at least 500 ms of dwell
+//     is enforced after that change.
+// UA: Автомат станів AUTO: рух -> дія інструмента -> пауза -> наступна точка.
+//     Якщо в точці змінюється реле або серво 2, після цієї зміни примусово
+//     витримується пауза щонайменше 500 мс.
 void processAuto() {
+    static bool toolActionDelayRequired = false;
+
     if (robot.operatingMode != OperatingMode::AUTO || robot.estopLatched) return;
 
     switch (robot.autoState) {
@@ -243,6 +251,27 @@ void processAuto() {
             }
 
             if (autoMotionStarted && motionFinished()) {
+                const ProgramPoint& p = programPoints[currentProgramPoint];
+                const float targetGripperDeg = clampFloat(
+                    p.gripperDeg, GRIP_MIN_DEG, GRIP_MAX_DEG);
+                const bool targetRelayOn = p.relayOn != 0;
+
+                const bool gripperChanged =
+                    fabsf(robot.gripperDeg - targetGripperDeg) > 0.1f;
+                const bool relayChanged = robot.relayOn != targetRelayOn;
+
+                robot.gripperDeg = targetGripperDeg;
+                setRelayState(targetRelayOn);
+                toolActionDelayRequired = gripperChanged || relayChanged;
+
+                if (toolActionDelayRequired) {
+                    Serial.printf("AUTO ACTION P%02u: SERVO2=%s RELAY=%s -> wait >= %lu ms\n",
+                                  currentProgramPoint + 1,
+                                  gripperChanged ? "MOVE" : "HOLD",
+                                  relayChanged ? (targetRelayOn ? "ON" : "OFF") : "HOLD",
+                                  static_cast<unsigned long>(AUTO_TOOL_ACTION_DWELL_MS));
+                }
+
                 autoMotionStarted = false;
                 autoDwellStartedMs = millis();
                 robot.autoState = AutoState::DWELL;
@@ -250,7 +279,10 @@ void processAuto() {
             break;
 
         case AutoState::DWELL: {
-            const uint32_t dwell = programPoints[currentProgramPoint].dwellMs;
+            uint32_t dwell = programPoints[currentProgramPoint].dwellMs;
+            if (toolActionDelayRequired && dwell < AUTO_TOOL_ACTION_DWELL_MS) {
+                dwell = AUTO_TOOL_ACTION_DWELL_MS;
+            }
             if (millis() - autoDwellStartedMs < dwell) return;
 
             currentProgramPoint++;
@@ -267,6 +299,7 @@ void processAuto() {
 
             robot.autoState = AutoState::MOVE;
             autoMotionStarted = false;
+            toolActionDelayRequired = false;
             break;
         }
     }
