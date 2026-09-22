@@ -123,7 +123,7 @@ constexpr float HOME_ARM1_DEG = 0.0f;
 constexpr float HOME_ARM2_DEG = 0.0f;
 constexpr float HOME_Z_MM     = 0.0f;
 constexpr float HOME_TOOL_ROTATE_DEG = 90.0f;
-constexpr float HOME_GRIP_DEG        = 90.0f;
+constexpr float HOME_GRIP_DEG        = 50.0f;
 
 // ============================================================
 // PL: OGRANICZENIA PROGRAMOWE
@@ -141,7 +141,7 @@ constexpr float Z_MIN_MM = 0.0f;
 constexpr float Z_MAX_MM = 300.0f;
 constexpr float TOOL_ROTATE_MIN_DEG = 0.0f;
 constexpr float TOOL_ROTATE_MAX_DEG = 180.0f;
-constexpr float GRIP_MIN_DEG = 90.0f;
+constexpr float GRIP_MIN_DEG = 50.0f;
 constexpr float GRIP_MAX_DEG = 180.0f;
 
 // ============================================================
