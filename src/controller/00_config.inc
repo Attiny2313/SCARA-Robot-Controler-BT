@@ -10,8 +10,8 @@
  *
  * PL: Homing jest wykonywany ręcznie. Przed uruchomieniem operator musi
  *     ustawić robota w pozycji HOME zdefiniowanej poniżej.
- * EN: Before power-up or reset the robot must be manually placed in HOME.
- *     The firmware assumes these values are the actual startup position.
+ * EN: Homing is manual. Before startup, the operator must place the robot
+ *     in the HOME position defined below.
  * UA: Повернення в HOME виконується вручну. Перед запуском оператор повинен
  *     встановити робота в положення HOME, визначене нижче.
  */
