@@ -176,7 +176,7 @@ constexpr float AUTO_Z_SPEED_MM_S     = 3.0f;
 //     змінює значення на 10%, а D-pad вліво повертає 100%.
 constexpr uint16_t AUTO_ARM_SPEED_PERCENT_DEFAULT = 100;
 constexpr uint16_t AUTO_ARM_SPEED_PERCENT_MIN     = 50;
-constexpr uint16_t AUTO_ARM_SPEED_PERCENT_MAX     = 250;
+constexpr uint16_t AUTO_ARM_SPEED_PERCENT_MAX     = 1000;
 constexpr uint16_t AUTO_ARM_SPEED_PERCENT_STEP    = 10;
 
 constexpr float TOOL_ROTATE_SPEED_DEG_S = 35.0f;
@@ -223,7 +223,7 @@ constexpr bool AUTO_LOOP_PROGRAM = true;
 // ============================================================
 // PL: STRUKTURY I STANY
 // EN: DATA TYPES AND STATES
-// UA: СТРУКТУРИ ТА СТАНИ
+// UA: СТРУКТУРИ І СТАНИ
 // ============================================================
 enum class ControlMode : uint8_t {
     JOINT,
@@ -289,7 +289,7 @@ struct RobotState {
 // ============================================================
 // PL: OBIEKTY I STAN GLOBALNY
 // EN: GLOBAL OBJECTS AND STATE
-// UA: ГЛОБАЛЬНІ ОБ'ЄКТИ ТА СТАН
+// UA: ГЛОБАЛЬНІ ОБ'ЄКТИ І СТАН
 // ============================================================
 FastAccelStepperEngine stepperEngine;
 FastAccelStepper* stepperArm1 = nullptr;
