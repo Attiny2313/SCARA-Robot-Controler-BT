@@ -223,7 +223,7 @@ constexpr bool AUTO_LOOP_PROGRAM = true;
 // ============================================================
 // PL: STRUKTURY I STANY
 // EN: DATA TYPES AND STATES
-// UA: СТРУКТУРИ І СТАНИ
+// UA: СТРУКТУРИ ТА СТАНИ
 // ============================================================
 enum class ControlMode : uint8_t {
     JOINT,
@@ -289,7 +289,7 @@ struct RobotState {
 // ============================================================
 // PL: OBIEKTY I STAN GLOBALNY
 // EN: GLOBAL OBJECTS AND STATE
-// UA: ГЛОБАЛЬНІ ОБ'ЄКТИ І СТАН
+// UA: ГЛОБАЛЬНІ ОБ'ЄКТИ ТА СТАН
 // ============================================================
 FastAccelStepperEngine stepperEngine;
 FastAccelStepper* stepperArm1 = nullptr;
