@@ -4,6 +4,18 @@
 // UA: ПРОГРАМА TEACH ТА ЗБЕРІГАННЯ NVS
 // ============================================================
 constexpr uint32_t AUTO_TOOL_ACTION_DWELL_MS = 500;
+constexpr uint32_t OLED_TEACH_NOTICE_MS = 2000;
+
+enum class OledTeachNotice : uint8_t {
+    NONE,
+    POINT_SAVED,
+    PROGRAM_CLEARED
+};
+
+OledTeachNotice oledTeachNotice = OledTeachNotice::NONE;
+uint32_t oledTeachNoticeUntilMs = 0;
+uint8_t oledTeachNoticePoint = 0;
+JointPosition oledTeachNoticeJoints = {0.0f, 0.0f, 0.0f};
 
 bool programPointValid(const ProgramPoint& p) {
     return jointPositionFinite(p.joints) &&
@@ -61,6 +73,10 @@ void clearProgram() {
     programPointCount = 0;
     currentProgramPoint = 0;
     saveProgram();
+
+    oledTeachNotice = OledTeachNotice::PROGRAM_CLEARED;
+    oledTeachNoticeUntilMs = millis() + OLED_TEACH_NOTICE_MS;
+
     Serial.println("TEACH: program wyczyszczony");
 }
 
@@ -98,6 +114,11 @@ void teachCurrentPoint() {
 
     programPointCount++;
     saveProgram();
+
+    oledTeachNotice = OledTeachNotice::POINT_SAVED;
+    oledTeachNoticeUntilMs = millis() + OLED_TEACH_NOTICE_MS;
+    oledTeachNoticePoint = programPointCount;
+    oledTeachNoticeJoints = p.joints;
 
     Serial.printf("TEACH: zapisano P%02u  A1=%.2f A2=%.2f Z=%.2f ROT=%.1f GRIP=%.1f RELAY=%s\n",
                   programPointCount,
