@@ -3,10 +3,17 @@
 // EN: MANUAL JOINT AND TOOL CONTROL
 // UA: РУЧНЕ КЕРУВАННЯ JOINT І TOOL
 // ============================================================
+bool toolTargetInitialized = false;
+
 // PL: JOINT steruje osiami bezpośrednio: ARM1, ARM2 i Z.
 // EN: JOINT directly controls the ARM1, ARM2 and Z axes.
 // UA: JOINT безпосередньо керує осями ARM1, ARM2 і Z.
 void processJointMode(float axisX, float axisY, float axisZ, float deltaTimeSeconds) {
+    // PL: Po wyjściu z TOOL następne wejście zsynchronizuje cel TCP z pozycją rzeczywistą.
+    // EN: After leaving TOOL, the next TOOL entry resynchronizes the TCP target to actual position.
+    // UA: Після виходу з TOOL наступний вхід у TOOL синхронізує ціль TCP з фактичним положенням.
+    toolTargetInitialized = false;
+
     JointPosition target = robot.joints;
     target.arm1Deg += axisX * ARM1_JOG_SPEED_DEG_S * deltaTimeSeconds;
     target.arm2Deg += -axisY * ARM2_JOG_SPEED_DEG_S * deltaTimeSeconds;
@@ -15,9 +22,33 @@ void processJointMode(float axisX, float axisY, float axisZ, float deltaTimeSeco
 }
 
 // PL: TOOL steruje TCP w X/Y; kąty ramion są obliczane przez IK.
+//     Przy wejściu do TOOL cel TCP jest synchronizowany z faktyczną pozycją,
+//     a IK zachowuje aktualną stronę łokcia, aby uniknąć nagłego "przeskoku"
+//     do drugiego rozwiązania kinematyki odwrotnej.
 // EN: TOOL controls TCP in X/Y; joint angles are calculated by IK.
+//     On TOOL entry the TCP target is synchronized with the actual position,
+//     and IK preserves the current elbow branch to avoid sudden branch jumps.
 // UA: TOOL керує TCP у X/Y; кути ланок обчислюються за допомогою IK.
+//     При вході в TOOL ціль TCP синхронізується з фактичним положенням,
+//     а IK зберігає поточну конфігурацію ліктя, щоб уникнути різкого стрибка.
 void processToolMode(float axisX, float axisY, float axisZ, float deltaTimeSeconds) {
+    if (!toolTargetInitialized) {
+        updateActualRobotPosition();
+        if (!jointPositionFinite(robot.actualJoints) ||
+            !cartesianPositionFinite(robot.actualTcp)) {
+            digitalWrite(PIN_LED_ERROR, HIGH);
+            return;
+        }
+
+        robot.joints = robot.actualJoints;
+        robot.tcp = robot.actualTcp;
+        toolTargetInitialized = true;
+
+        Serial.printf("TOOL SYNC: X=%.2f Y=%.2f Z=%.2f A1=%.2f A2=%.2f\n",
+                      robot.tcp.xMm, robot.tcp.yMm, robot.tcp.zMm,
+                      robot.joints.arm1Deg, robot.joints.arm2Deg);
+    }
+
     CartesianPosition desired = robot.tcp;
     desired.xMm += axisX * TOOL_XY_SPEED_MM_S * deltaTimeSeconds;
     desired.yMm += -axisY * TOOL_XY_SPEED_MM_S * deltaTimeSeconds;
@@ -25,9 +56,16 @@ void processToolMode(float axisX, float axisY, float axisZ, float deltaTimeSecon
     desired.zMm = clampFloat(desired.zMm, Z_MIN_MM, Z_MAX_MM);
 
     JointPosition calculatedJoints;
-    constexpr bool ELBOW_UP = true;
 
-    if (!inverseKinematics(desired.xMm, desired.yMm, ELBOW_UP, calculatedJoints)) {
+    // PL: Zachowaj bieżącą gałąź IK. Wcześniej wymuszony ELBOW_UP=true mógł
+    //     powodować gwałtowne przejście ARM2 z kąta ujemnego na dodatni.
+    // EN: Preserve the current IK branch. The previous fixed ELBOW_UP=true could
+    //     force ARM2 to jump from a negative-angle configuration to a positive one.
+    // UA: Зберігати поточну гілку IK. Раніше фіксоване ELBOW_UP=true могло
+    //     примусово перевести ARM2 з від'ємної конфігурації в додатну.
+    const bool elbowUp = robot.actualJoints.arm2Deg >= 0.0f;
+
+    if (!inverseKinematics(desired.xMm, desired.yMm, elbowUp, calculatedJoints)) {
         digitalWrite(PIN_LED_ERROR, HIGH);
         return;
     }
