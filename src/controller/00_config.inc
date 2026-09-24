@@ -84,7 +84,9 @@ constexpr uint8_t PIN_ENDSTOP_ARM2 = 36;
 // UA: КОНФІГУРАЦІЯ МЕХАНІКИ
 // ============================================================
 constexpr float ARM_LENGTH_1_MM = 91.61f;
-constexpr float ARM_LENGTH_2_MM = 97.528f;
+constexpr float ARM_LENGTH_2_MM = 139.0f; //Longer Arm2 Pybot with Mantis Gripper
+
+//constexpr float ARM_LENGTH_2_MM = 97.528f; // Original PyBot
 
 constexpr float MOTOR_STEPS_REV = 200.0f;
 constexpr float MICROSTEPS      = 16.0f;
