@@ -7,8 +7,23 @@ bool toolTargetInitialized = false;
 bool toolElbowUp = true;
 bool toolLimitActive = false;
 
+float toolWorldHeadingDeg = HOME_ARM1_DEG + HOME_ARM2_DEG + HOME_TOOL_ROTATE_DEG;
+
 constexpr float TOOL_WORKSPACE_MARGIN_MM = 0.25f;
-constexpr float TOOL_ARM_ACCEL_DEG_S2 = 120.0f;
+constexpr float TOOL_TCP_LOOKAHEAD_MM = 2.0f;
+constexpr float TOOL_XY_SPEED_SCALE = 1.50f;
+constexpr float TOOL_ARM_MAX_SPEED_DEG_S = 35.0f;
+constexpr float TOOL_ARM_ACCEL_DEG_S2 = 180.0f;
+
+// PL: Znak opisuje wpływ dodatniego kąta serwa obrotu na orientację narzędzia
+//     względem podstawy robota. Jeżeli na gotowej mechanice kompensacja działa
+//     w przeciwną stronę, wystarczy zmienić +1.0f na -1.0f.
+// EN: Sign describing how positive wrist-servo motion affects world tool heading.
+//     If compensation moves in the opposite direction on the real mechanism,
+//     change +1.0f to -1.0f.
+// UA: Знак визначає напрямок впливу серво обертання на орієнтацію інструмента.
+//     Якщо компенсація працює навпаки, змінити +1.0f на -1.0f.
+constexpr float TOOL_SERVO_KINEMATIC_SIGN = 1.0f;
 
 void setToolLimitActive(bool active) {
     if (toolLimitActive == active) return;
@@ -34,17 +49,70 @@ void clampToolWorkspace(CartesianPosition& point) {
     }
 }
 
+// PL: Cel TCP może wyprzedzać pozycję rzeczywistą tylko o niewielką wartość.
+//     Dzięki temu silniki nie kończą mikro-ruchu co 10 ms i nie zaczynają od nowa,
+//     ale jednocześnie po puszczeniu analoga robot zatrzymuje się blisko miejsca
+//     zwolnienia drążka.
+// EN: The TCP target may lead the actual position only by a small distance.
+//     This keeps the steppers moving continuously instead of restarting tiny moves
+//     every control cycle, while retaining a short stop distance after stick release.
+// UA: Ціль TCP може випереджати фактичну позицію лише на невелику відстань,
+//     що зменшує ривки без значного вибігу після відпускання стіка.
+void clampToolLookahead(const CartesianPosition& actual, CartesianPosition& target) {
+    const float dx = target.xMm - actual.xMm;
+    const float dy = target.yMm - actual.yMm;
+    const float distance = hypotf(dx, dy);
+
+    if (!isfinite(distance) || distance <= TOOL_TCP_LOOKAHEAD_MM || distance < 0.0001f) return;
+
+    const float scale = TOOL_TCP_LOOKAHEAD_MM / distance;
+    target.xMm = actual.xMm + dx * scale;
+    target.yMm = actual.yMm + dy * scale;
+}
+
 bool calculateToolJoints(const CartesianPosition& desired, JointPosition& result) {
     return inverseKinematics(desired.xMm, desired.yMm, toolElbowUp, result);
 }
 
+// PL: W TOOL serwo obrotu jest częścią orientacji narzędzia. Zapamiętujemy
+//     orientację względem podstawy: A1 + A2 + SERVO. Podczas ruchu X/Y serwo
+//     kompensuje zmianę obu ramion, a prawy analog X zmienia właśnie tę orientację.
+// EN: In TOOL mode the wrist servo is part of tool orientation. The controller
+//     keeps A1 + A2 + SERVO approximately constant while X/Y changes; right stick X
+//     changes the requested world heading instead of directly moving the servo.
+// UA: У TOOL серво обертання входить до орієнтації інструмента. Контролер
+//     компенсує зміну A1+A2, а правий стік X змінює заданий абсолютний кут.
+void updateToolOrientationTarget(const JointPosition& targetJoints,
+                                 float rotateCommand,
+                                 float deltaTimeSeconds) {
+    toolWorldHeadingDeg += rotateCommand * TOOL_ROTATE_SPEED_DEG_S * deltaTimeSeconds;
+
+    const float armHeadingDeg = targetJoints.arm1Deg + targetJoints.arm2Deg;
+    const float requestedServoDeg =
+        (toolWorldHeadingDeg - armHeadingDeg) / TOOL_SERVO_KINEMATIC_SIGN;
+    const float clampedServoDeg = clampFloat(requestedServoDeg,
+                                             TOOL_ROTATE_MIN_DEG,
+                                             TOOL_ROTATE_MAX_DEG);
+
+    robot.toolRotateDeg = clampedServoDeg;
+
+    // PL: Bez narastania błędu przy dojściu serwa do ograniczenia mechanicznego.
+    // EN: Prevent heading-command wind-up while the servo is at its limit.
+    // UA: Запобігати накопиченню помилки при досягненні межі серво.
+    if (fabsf(clampedServoDeg - requestedServoDeg) > 0.001f) {
+        toolWorldHeadingDeg = armHeadingDeg +
+                              TOOL_SERVO_KINEMATIC_SIGN * clampedServoDeg;
+    }
+}
+
 // PL: TOOL używa własnego sterowania osiami. Oba ramiona dostają takie samo
-//     przyspieszenie kątowe, dzięki czemu podczas ruchu TCP nie rozjeżdżają się
-//     tak mocno jak przy bazowych, bardzo różnych przyspieszeniach ARM1/ARM2.
-// EN: TOOL uses dedicated joint control. Both arms use the same angular
-//     acceleration, reducing TCP path distortion caused by unequal joint ramps.
-// UA: TOOL використовує окреме керування осями. Обидва плеча мають однакове
-//     кутове прискорення, що зменшує викривлення траєкторії TCP.
+//     przyspieszenie kątowe i wyższą prędkość maksymalną niż zwykły JOINT.
+//     Niewielkie wyprzedzenie celu TCP ogranicza efekt drgania przy ciągłej jeździe.
+// EN: TOOL uses dedicated joint control. Both arms use equal angular acceleration
+//     and a higher maximum speed than regular JOINT control. Small TCP lookahead
+//     reduces stop-start chatter during continuous motion.
+// UA: TOOL має окреме керування осями, однакове кутове прискорення обох плечей
+//     та невелике випередження цілі TCP для плавнішого безперервного руху.
 void commandToolJointPosition(const JointPosition& target, float deltaTimeSeconds) {
     if (robot.estopLatched || !robot.gamepadArmed ||
         robot.operatingMode != OperatingMode::MANUAL ||
@@ -61,8 +129,8 @@ void commandToolJointPosition(const JointPosition& target, float deltaTimeSecond
     const float arm2Delta = fabsf(clamped.arm2Deg - robot.actualJoints.arm2Deg);
     const float zDelta = fabsf(clamped.zMm - robot.actualJoints.zMm);
 
-    const uint32_t arm1MaxHz = stepHz(ARM1_JOG_SPEED_DEG_S * STEPS_PER_DEG_ARM1);
-    const uint32_t arm2MaxHz = stepHz(ARM2_JOG_SPEED_DEG_S * STEPS_PER_DEG_ARM2);
+    const uint32_t arm1MaxHz = stepHz(TOOL_ARM_MAX_SPEED_DEG_S * STEPS_PER_DEG_ARM1);
+    const uint32_t arm2MaxHz = stepHz(TOOL_ARM_MAX_SPEED_DEG_S * STEPS_PER_DEG_ARM2);
     const uint32_t zMaxHz = stepHz(Z_JOG_SPEED_MM_S * STEPS_PER_MM_Z);
 
     if (arm1Delta > 0.0001f) {
@@ -110,17 +178,17 @@ void processJointMode(float axisX, float axisY, float axisZ, float deltaTimeSeco
     commandManualJointPosition(target, deltaTimeSeconds);
 }
 
-// PL: TOOL steruje TCP w X/Y; kąty ramion są obliczane przez IK.
-//     Każda nowa komenda powstaje względem faktycznej pozycji TCP, więc cel nie
-//     "ucieka" przed silnikami. Gałąź IK jest zapamiętywana przy wejściu do TOOL.
-//     Przy granicy obszaru roboczego ruch jest łagodnie ograniczany zamiast
-//     zapalać diodę FAULT i zatrzymywać całe sterowanie.
-// EN: TOOL controls TCP in X/Y using IK. Each command is based on the actual TCP
-//     position so the target cannot run away from the motors. The IK branch is
-//     latched on TOOL entry. Workspace limits clamp motion instead of raising FAULT.
-// UA: TOOL керує TCP у X/Y через IK. Кожна команда базується на фактичній позиції
-//     TCP, гілка IK фіксується при вході, а межі робочої зони не викликають FAULT.
-void processToolMode(float axisX, float axisY, float axisZ, float deltaTimeSeconds) {
+// PL: TOOL steruje TCP w X/Y; kąty ramion są obliczane przez IK. Cel TCP ma
+//     niewielkie wyprzedzenie względem pozycji rzeczywistej, co ogranicza drgania
+//     powodowane przez serię bardzo krótkich ruchów. Gałąź IK jest zapamiętywana
+//     przy wejściu do TOOL, a serwo obrotu kompensuje zmianę A1+A2.
+// EN: TOOL controls TCP X/Y through IK. A small target lookahead reduces chatter
+//     from repeated micro-moves. The IK branch is latched on entry and the wrist
+//     servo compensates A1+A2 to approximately preserve world tool orientation.
+// UA: TOOL керує TCP X/Y через IK. Невелике випередження цілі зменшує ривки,
+//     гілка IK фіксується при вході, а серво компенсує зміну A1+A2.
+void processToolMode(float axisX, float axisY, float axisZ,
+                     float rotateCommand, float deltaTimeSeconds) {
     updateActualRobotPosition();
     if (!jointPositionFinite(robot.actualJoints) ||
         !cartesianPositionFinite(robot.actualTcp)) {
@@ -131,24 +199,34 @@ void processToolMode(float axisX, float axisY, float axisZ, float deltaTimeSecon
         robot.joints = robot.actualJoints;
         robot.tcp = robot.actualTcp;
         toolElbowUp = robot.actualJoints.arm2Deg >= 0.0f;
+        toolWorldHeadingDeg = robot.actualJoints.arm1Deg + robot.actualJoints.arm2Deg +
+                              TOOL_SERVO_KINEMATIC_SIGN * robot.toolRotateDeg;
         toolTargetInitialized = true;
         setToolLimitActive(false);
 
-        Serial.printf("TOOL SYNC: X=%.2f Y=%.2f Z=%.2f A1=%.2f A2=%.2f branch=%s\n",
+        Serial.printf("TOOL SYNC: X=%.2f Y=%.2f Z=%.2f A1=%.2f A2=%.2f ROT=%.1f HEAD=%.1f branch=%s\n",
                       robot.tcp.xMm, robot.tcp.yMm, robot.tcp.zMm,
                       robot.joints.arm1Deg, robot.joints.arm2Deg,
+                      robot.toolRotateDeg, toolWorldHeadingDeg,
                       toolElbowUp ? "+A2" : "-A2");
     }
 
     const CartesianPosition actual = robot.actualTcp;
-    const float dx = axisX * TOOL_XY_SPEED_MM_S * deltaTimeSeconds;
-    const float dy = -axisY * TOOL_XY_SPEED_MM_S * deltaTimeSeconds;
+    const float toolXySpeed = TOOL_XY_SPEED_MM_S * TOOL_XY_SPEED_SCALE;
+    const float dx = axisX * toolXySpeed * deltaTimeSeconds;
+    const float dy = -axisY * toolXySpeed * deltaTimeSeconds;
     const float dz = -axisZ * Z_JOG_SPEED_MM_S * deltaTimeSeconds;
 
-    CartesianPosition desired = actual;
+    // PL: Integrujemy cel względem poprzedniego celu, ale ograniczamy jego
+    //     wyprzedzenie względem rzeczywistego TCP. To daje płynniejszy ruch
+    //     bez niekontrolowanego "uciekania" zadania.
+    // EN: Integrate from the previous target, then limit lead over actual TCP.
+    // UA: Ціль інтегрується від попередньої, але її випередження обмежується.
+    CartesianPosition desired = robot.tcp;
     desired.xMm += dx;
     desired.yMm += dy;
-    desired.zMm = clampFloat(actual.zMm + dz, Z_MIN_MM, Z_MAX_MM);
+    desired.zMm = clampFloat(robot.tcp.zMm + dz, Z_MIN_MM, Z_MAX_MM);
+    clampToolLookahead(actual, desired);
     clampToolWorkspace(desired);
 
     JointPosition calculatedJoints;
@@ -161,25 +239,23 @@ void processToolMode(float axisX, float axisY, float axisZ, float deltaTimeSecon
     //     so the TCP does not freeze completely at the workspace boundary.
     // UA: Якщо діагональний рух досягає межі осі, спробувати окремо X, потім Y.
     if (!xyAccepted && fabsf(dx) > 0.0001f) {
-        CartesianPosition xOnly = actual;
-        xOnly.xMm += dx;
-        xOnly.zMm = desired.zMm;
+        CartesianPosition xOnly = desired;
+        xOnly.yMm = actual.yMm;
+        clampToolLookahead(actual, xOnly);
         clampToolWorkspace(xOnly);
         if (calculateToolJoints(xOnly, calculatedJoints)) {
-            desired.xMm = xOnly.xMm;
-            desired.yMm = xOnly.yMm;
+            desired = xOnly;
             xyAccepted = true;
         }
     }
 
     if (!xyAccepted && fabsf(dy) > 0.0001f) {
-        CartesianPosition yOnly = actual;
-        yOnly.yMm += dy;
-        yOnly.zMm = desired.zMm;
+        CartesianPosition yOnly = desired;
+        yOnly.xMm = actual.xMm;
+        clampToolLookahead(actual, yOnly);
         clampToolWorkspace(yOnly);
         if (calculateToolJoints(yOnly, calculatedJoints)) {
-            desired.xMm = yOnly.xMm;
-            desired.yMm = yOnly.yMm;
+            desired = yOnly;
             xyAccepted = true;
         }
     }
@@ -199,6 +275,7 @@ void processToolMode(float axisX, float axisY, float axisZ, float deltaTimeSecon
     const bool requestedXY = fabsf(dx) > 0.0001f || fabsf(dy) > 0.0001f;
     setToolLimitActive(requestedXY && !xyAccepted);
 
+    updateToolOrientationTarget(calculatedJoints, rotateCommand, deltaTimeSeconds);
     commandToolJointPosition(calculatedJoints, deltaTimeSeconds);
 }
 
@@ -305,12 +382,21 @@ void processGamepad(float deltaTimeSeconds) {
     if (controller->a()) gripCommand = 1.0f;
     if (controller->b()) gripCommand = -1.0f;
 
-    updateServoTargets(rightX, gripCommand, deltaTimeSeconds);
-
     if (robot.controlMode == ControlMode::JOINT) {
+        // PL: W JOINT prawy analog X steruje serwem obrotu bezpośrednio.
+        // EN: In JOINT, right stick X directly controls the wrist servo.
+        // UA: У JOINT правий стік X безпосередньо керує серво обертання.
+        updateServoTargets(rightX, gripCommand, deltaTimeSeconds);
         processJointMode(leftX, leftY, rightY, deltaTimeSeconds);
     } else {
-        processToolMode(leftX, leftY, rightY, deltaTimeSeconds);
+        // PL: W TOOL A/B nadal steruje chwytakiem, natomiast prawy analog X
+        //     zmienia orientację narzędzia względem podstawy robota.
+        // EN: In TOOL, A/B still controls grip, while right stick X changes the
+        //     tool world heading handled together with SCARA kinematics.
+        // UA: У TOOL A/B керує захватом, а правий стік X змінює орієнтацію
+        //     інструмента відносно основи робота.
+        updateServoTargets(0.0f, gripCommand, deltaTimeSeconds);
+        processToolMode(leftX, leftY, rightY, rightX, deltaTimeSeconds);
     }
 }
 
