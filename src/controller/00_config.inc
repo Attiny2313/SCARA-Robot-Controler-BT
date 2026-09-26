@@ -84,7 +84,9 @@ constexpr uint8_t PIN_ENDSTOP_ARM2 = 36;
 // UA: КОНФІГУРАЦІЯ МЕХАНІКИ
 // ============================================================
 constexpr float ARM_LENGTH_1_MM = 91.61f;
-constexpr float ARM_LENGTH_2_MM = 97.528f;
+constexpr float ARM_LENGTH_2_MM = 114.0f; //Longer Arm2 Pybot with Mantis Gripper
+
+//constexpr float ARM_LENGTH_2_MM = 97.528f; // Original PyBot
 
 constexpr float MOTOR_STEPS_REV = 200.0f;
 constexpr float MICROSTEPS      = 16.0f;
@@ -169,15 +171,15 @@ constexpr float AUTO_ARM2_SPEED_DEG_S = 20.0f;
 constexpr float AUTO_Z_SPEED_MM_S     = 3.0f;
 
 // PL: Override prędkości AUTO skaluje wszystkie trzy osie. D-pad góra/dół
-//     zmienia wartość o 10%, a D-pad lewo przywraca 100%.
+//     zmienia wartość o 50%, a D-pad lewo przywraca 100%.
 // EN: AUTO speed override scales all three axes. D-pad up/down changes it
-//     by 10%, while D-pad left restores 100%.
+//     by 50%, while D-pad left restores 100%.
 // UA: Корекція швидкості AUTO масштабує всі три осі. D-pad вгору/вниз
-//     змінює значення на 10%, а D-pad вліво повертає 100%.
+//     змінює значення на 50%, а D-pad вліво повертає 100%.
 constexpr uint16_t AUTO_ARM_SPEED_PERCENT_DEFAULT = 100;
 constexpr uint16_t AUTO_ARM_SPEED_PERCENT_MIN     = 50;
-constexpr uint16_t AUTO_ARM_SPEED_PERCENT_MAX     = 250;
-constexpr uint16_t AUTO_ARM_SPEED_PERCENT_STEP    = 10;
+constexpr uint16_t AUTO_ARM_SPEED_PERCENT_MAX     = 1000;
+constexpr uint16_t AUTO_ARM_SPEED_PERCENT_STEP    = 50;
 
 constexpr float TOOL_ROTATE_SPEED_DEG_S = 35.0f;
 constexpr float GRIP_SPEED_DEG_S        = 45.0f;

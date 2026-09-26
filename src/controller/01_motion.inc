@@ -75,6 +75,18 @@ float autoArmSpeedScale() {
     return static_cast<float>(autoArmSpeedPercent) / 100.0f;
 }
 
+// PL: Przyspieszenie AUTO rośnie liniowo razem z override prędkości.
+//     Dzięki temu czas rozpędzania pozostaje zbliżony przy 50...1000%.
+// EN: AUTO acceleration scales linearly with the speed override so ramp time
+//     remains approximately constant across the 50...1000% range.
+// UA: Прискорення AUTO лінійно масштабується разом зі швидкістю, щоб час
+//     розгону залишався приблизно сталим у діапазоні 50...1000%.
+uint32_t scaledAutoAcceleration(uint32_t baseAcceleration) {
+    const float scaled = static_cast<float>(baseAcceleration) * autoArmSpeedScale();
+    if (!isfinite(scaled) || scaled < 1.0f) return 1;
+    return static_cast<uint32_t>(lroundf(scaled));
+}
+
 void setAutoArmSpeedPercent(int32_t requestedPercent) {
     const uint16_t clampedPercent = static_cast<uint16_t>(constrain(
         requestedPercent,
@@ -85,11 +97,12 @@ void setAutoArmSpeedPercent(int32_t requestedPercent) {
 
     autoArmSpeedPercent = clampedPercent;
     const float scale = autoArmSpeedScale();
-    Serial.printf("AUTO SPEED: %u%% (A1=%.1f deg/s, A2=%.1f deg/s, Z=%.2f mm/s)\n",
+    Serial.printf("AUTO SPEED: %u%% (A1=%.1f deg/s, A2=%.1f deg/s, Z=%.2f mm/s, ACC x%.2f)\n",
                   autoArmSpeedPercent,
                   AUTO_ARM1_SPEED_DEG_S * scale,
                   AUTO_ARM2_SPEED_DEG_S * scale,
-                  AUTO_Z_SPEED_MM_S * scale);
+                  AUTO_Z_SPEED_MM_S * scale,
+                  scale);
 }
 
 // PL: D-pad działa na zboczu: góra +10%, dół -10%, lewo = 100%.
@@ -244,6 +257,13 @@ void commandManualJointPosition(const JointPosition& target, float deltaTimeSeco
         return;
     }
 
+    // PL: Po powrocie z AUTO ręczne sterowanie zawsze używa bazowych przyspieszeń.
+    // EN: After returning from AUTO, manual control always restores base accelerations.
+    // UA: Після повернення з AUTO ручне керування завжди відновлює базові прискорення.
+    stepperArm1->setAcceleration(ARM1_ACCEL);
+    stepperArm2->setAcceleration(ARM2_ACCEL);
+    stepperZ->setAcceleration(Z_ACCEL);
+
     const JointPosition clamped = clampJointPosition(target);
 
     if (deltaTimeSeconds > 0.0f) {
@@ -283,12 +303,12 @@ void commandManualJointPosition(const JointPosition& target, float deltaTimeSeco
     robot.tcp = forwardKinematics(robot.joints);
 }
 
-// PL: AUTO wykonuje ruch PTP. Ten sam procent prędkości skaluje ARM1, ARM2 i Z.
-//     Brak dodatkowych programowych limitów częstotliwości STEP.
-// EN: AUTO performs PTP motion. The same speed percentage scales ARM1, ARM2 and Z.
-//     There are no additional software STEP-frequency caps.
-// UA: AUTO виконує рух PTP. Той самий відсоток швидкості масштабує ARM1, ARM2 і Z.
-//     Додаткові програмні обмеження частоти STEP не застосовуються.
+// PL: AUTO wykonuje ruch PTP. Ten sam procent skaluje prędkość i przyspieszenie
+//     ARM1, ARM2 i Z. Brak dodatkowych programowych limitów częstotliwości STEP.
+// EN: AUTO performs PTP motion. The same percentage scales speed and acceleration
+//     for ARM1, ARM2 and Z. There are no additional software STEP-frequency caps.
+// UA: AUTO виконує рух PTP. Той самий відсоток масштабує швидкість і прискорення
+//     ARM1, ARM2 та Z. Додаткові програмні обмеження частоти STEP не застосовуються.
 void commandAutoJointPosition(const JointPosition& target) {
     if (robot.estopLatched || robot.operatingMode != OperatingMode::AUTO) return;
 
@@ -310,6 +330,13 @@ void commandAutoJointPosition(const JointPosition& target) {
     const float arm1AutoSpeed = AUTO_ARM1_SPEED_DEG_S * speedScale;
     const float arm2AutoSpeed = AUTO_ARM2_SPEED_DEG_S * speedScale;
     const float zAutoSpeed = AUTO_Z_SPEED_MM_S * speedScale;
+
+    // PL: Przyspieszenia rosną proporcjonalnie do override prędkości.
+    // EN: Accelerations increase proportionally with the speed override.
+    // UA: Прискорення зростають пропорційно до корекції швидкості.
+    stepperArm1->setAcceleration(scaledAutoAcceleration(ARM1_ACCEL));
+    stepperArm2->setAcceleration(scaledAutoAcceleration(ARM2_ACCEL));
+    stepperZ->setAcceleration(scaledAutoAcceleration(Z_ACCEL));
 
     const float t1 = d1 / arm1AutoSpeed;
     const float t2 = d2 / arm2AutoSpeed;

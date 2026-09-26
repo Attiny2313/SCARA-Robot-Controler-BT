@@ -118,6 +118,64 @@ void oledPrintFloatOrErr(float value, uint8_t decimals) {
     }
 }
 
+// PL: Krótkie potwierdzenia operacji TEACH są nakładką na normalny ekran MANUAL.
+// EN: Short TEACH confirmations temporarily replace the normal MANUAL screen.
+// UA: Короткі підтвердження TEACH тимчасово замінюють звичайний екран MANUAL.
+bool renderTeachNotice(uint32_t now) {
+    if (oledTeachNotice == OledTeachNotice::NONE) return false;
+
+    if (static_cast<int32_t>(now - oledTeachNoticeUntilMs) >= 0) {
+        oledTeachNotice = OledTeachNotice::NONE;
+        return false;
+    }
+
+    if (oledTeachNotice == OledTeachNotice::POINT_SAVED) {
+        display.setCursor(0, 0);
+        display.print("TEACH OK");
+
+        display.setCursor(0, 10);
+        display.print("P");
+        if (oledTeachNoticePoint < 10) display.print('0');
+        display.print(oledTeachNoticePoint);
+        display.print(" ZAPISANO");
+
+        display.setCursor(0, 20);
+        display.print("A1:");
+        oledPrintFloatOrErr(oledTeachNoticeJoints.arm1Deg, 1);
+        display.print(" deg");
+
+        display.setCursor(0, 30);
+        display.print("A2:");
+        oledPrintFloatOrErr(oledTeachNoticeJoints.arm2Deg, 1);
+        display.print(" deg");
+
+        display.setCursor(0, 40);
+        display.print("Z :");
+        oledPrintFloatOrErr(oledTeachNoticeJoints.zMm, 1);
+        display.print(" mm");
+
+        display.setCursor(0, 50);
+        display.print("R:");
+        display.print(robot.relayOn ? "ON" : "OFF");
+        display.print("  T:");
+        display.print(programPointCount);
+    } else if (oledTeachNotice == OledTeachNotice::PROGRAM_CLEARED) {
+        display.setCursor(0, 8);
+        display.setTextSize(2);
+        display.print("PROGRAM");
+
+        display.setCursor(0, 28);
+        display.print("SKASOWANY");
+
+        display.setTextSize(1);
+        display.setCursor(0, 52);
+        display.print("TEACH points: 0");
+    }
+
+    display.display();
+    return true;
+}
+
 void refreshDisplay() {
     if (!displayAvailable) return;
 
@@ -172,6 +230,10 @@ void refreshDisplay() {
         return;
     }
 
+    if (robot.operatingMode == OperatingMode::MANUAL && renderTeachNotice(now)) {
+        return;
+    }
+
     const bool numericOk = jointPositionFinite(robot.actualJoints) &&
                            cartesianPositionFinite(robot.actualTcp) &&
                            jointPositionFinite(robot.joints);
@@ -189,15 +251,23 @@ void refreshDisplay() {
         display.print(robot.controlMode == ControlMode::TOOL ? "TOOL" : "JOINT");
     }
 
+    // PL: Stan przekaźnika jest stale widoczny jako R:ON / R:OFF.
+    // EN: Relay state is always visible as R:ON / R:OFF.
+    // UA: Стан реле постійно відображається як R:ON / R:OFF.
     display.setCursor(0, 10);
     display.print("BT:");
     display.print(robot.controllerConnected ? "OK" : "WAIT");
-    display.print(" T:");
-    display.print(programPointCount);
     if (robot.operatingMode == OperatingMode::AUTO) {
+        display.print(" R:");
+        display.print(robot.relayOn ? "ON" : "OFF");
         display.print(" S:");
         display.print(autoArmSpeedPercent);
         display.print('%');
+    } else {
+        display.print(" T:");
+        display.print(programPointCount);
+        display.print(" R:");
+        display.print(robot.relayOn ? "ON" : "OFF");
     }
 
     display.setCursor(0, 20);

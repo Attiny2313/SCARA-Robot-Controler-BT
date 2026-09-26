@@ -74,12 +74,17 @@ void printCurrentPosition() {
     Serial.println("-----------------------");
 }
 
+bool teachLongPressHandled = false;
+
 // PL: Oba przyciski panelu są aktywne stanem HIGH i korzystają z INPUT_PULLDOWN.
-//     TEACH: krótkie naciśnięcie zapisuje punkt, długie kasuje program.
+//     TEACH: krótkie naciśnięcie zapisuje punkt, długie kasuje program dokładnie
+//     po osiągnięciu progu TEACH_LONG_PRESS_MS, bez czekania na puszczenie przycisku.
 // EN: Both panel buttons are active HIGH and use INPUT_PULLDOWN.
-//     TEACH: short press stores a point, long press clears the program.
+//     TEACH: short press stores a point; long press clears the program as soon as
+//     TEACH_LONG_PRESS_MS is reached, without waiting for button release.
 // UA: Обидві кнопки панелі активні рівнем HIGH і використовують INPUT_PULLDOWN.
-//     TEACH: коротке натискання зберігає точку, довге очищає програму.
+//     TEACH: коротке натискання зберігає точку, довге очищає програму одразу після
+//     досягнення TEACH_LONG_PRESS_MS, без очікування відпускання кнопки.
 void updatePanelButtons() {
     const uint32_t now = millis();
     const bool modeButton = digitalRead(PIN_BUTTON_MODE);
@@ -95,22 +100,32 @@ void updatePanelButtons() {
         now - lastTeachButtonEdgeMs >= BUTTON_DEBOUNCE_MS) {
         lastTeachButtonEdgeMs = now;
         teachPressStartedMs = now;
+        teachLongPressHandled = false;
+    }
+
+    // PL: Długie przytrzymanie kasuje program w chwili osiągnięcia progu czasu.
+    //     clearProgram() ustawia jednocześnie powiadomienie OLED, więc komunikat
+    //     "PROGRAM SKASOWANY" pojawia się wtedy, gdy kasowanie faktycznie nastąpiło.
+    // EN: Long press clears the program immediately when the time threshold is reached.
+    //     clearProgram() also starts the OLED notice at the exact same moment.
+    // UA: Довге утримання очищає програму одразу після досягнення порогу часу.
+    //     clearProgram() одночасно запускає повідомлення OLED.
+    if (teachButton == HIGH && teachPressStartedMs != 0 && !teachLongPressHandled &&
+        now - teachPressStartedMs >= TEACH_LONG_PRESS_MS) {
+        teachLongPressHandled = true;
+        clearProgram();
     }
 
     if (previousTeachButton == HIGH && teachButton == LOW &&
         now - lastTeachButtonEdgeMs >= BUTTON_DEBOUNCE_MS) {
         lastTeachButtonEdgeMs = now;
 
-        if (teachPressStartedMs != 0) {
-            const uint32_t heldMs = now - teachPressStartedMs;
-            if (heldMs >= TEACH_LONG_PRESS_MS) {
-                clearProgram();
-            } else {
-                teachCurrentPoint();
-            }
+        if (teachPressStartedMs != 0 && !teachLongPressHandled) {
+            teachCurrentPoint();
         }
 
         teachPressStartedMs = 0;
+        teachLongPressHandled = false;
     }
 
     previousModeButton = modeButton;
@@ -249,4 +264,3 @@ bool updateGamepadArming(float leftX, float leftY, float rightX, float rightY,
 
     return false;
 }
-
