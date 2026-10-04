@@ -49,9 +49,24 @@ int32_t arm1DegreesToSteps(float angleDeg) {
     return lroundf(angleDeg * STEPS_PER_DEG_ARM1 * SIGN_ARM1);
 }
 
-int32_t arm2DegreesToSteps(float angleDeg) {
-    if (!isfinite(angleDeg)) return 0;
-    return lroundf(angleDeg * STEPS_PER_DEG_ARM2 * SIGN_ARM2);
+// PL: ARM2 jest kątem przegubu względem ARM1, natomiast licznik kroków opisuje
+//     kąt silnika ARM2. Mechaniczne sprzężenie jest kompensowane liniowo.
+// EN: ARM2 is the joint angle relative to ARM1, while the step counter describes
+//     the ARM2 motor angle. The mechanical coupling is compensated linearly.
+// UA: ARM2 є кутом суглоба відносно ARM1, а лічильник кроків описує кут двигуна
+//     ARM2. Механічний зв'язок компенсується лінійно.
+float arm2JointToMotorDegrees(float arm1Deg, float arm2JointDeg) {
+    return arm2JointDeg + arm1Deg * ARM2_ARM1_COUPLING;
+}
+
+float arm2MotorToJointDegrees(float arm1Deg, float arm2MotorDeg) {
+    return arm2MotorDeg - arm1Deg * ARM2_ARM1_COUPLING;
+}
+
+int32_t arm2DegreesToSteps(float arm1Deg, float arm2JointDeg) {
+    const float motorAngleDeg = arm2JointToMotorDegrees(arm1Deg, arm2JointDeg);
+    if (!isfinite(motorAngleDeg)) return 0;
+    return lroundf(motorAngleDeg * STEPS_PER_DEG_ARM2 * SIGN_ARM2);
 }
 
 int32_t zMillimetersToSteps(float zMm) {
@@ -63,12 +78,36 @@ float arm1StepsToDegrees(int32_t steps) {
     return static_cast<float>(steps) / (STEPS_PER_DEG_ARM1 * SIGN_ARM1);
 }
 
-float arm2StepsToDegrees(int32_t steps) {
-    return static_cast<float>(steps) / (STEPS_PER_DEG_ARM2 * SIGN_ARM2);
+float arm2StepsToDegrees(int32_t steps, float arm1Deg) {
+    const float motorAngleDeg =
+        static_cast<float>(steps) / (STEPS_PER_DEG_ARM2 * SIGN_ARM2);
+    return arm2MotorToJointDegrees(arm1Deg, motorAngleDeg);
 }
 
 float zStepsToMillimeters(int32_t steps) {
     return static_cast<float>(steps) / (STEPS_PER_MM_Z * SIGN_Z);
+}
+
+// PL: Silnik ARM2 musi mieć zapas prędkości i przyspieszenia na własny ruch
+//     przegubu oraz na jednoczesną kompensację ruchu ARM1.
+// EN: The ARM2 motor needs speed and acceleration headroom for its own joint
+//     motion plus simultaneous ARM1 coupling compensation.
+// UA: Двигун ARM2 повинен мати запас швидкості та прискорення для власного руху
+//     суглоба та одночасної компенсації руху ARM1.
+float arm2MotorSpeedForJointSpeeds(float arm1SpeedDegS, float arm2JointSpeedDegS) {
+    return fabsf(arm2JointSpeedDegS) +
+           fabsf(ARM2_ARM1_COUPLING) * fabsf(arm1SpeedDegS);
+}
+
+uint32_t arm2CoupledAcceleration(uint32_t arm1AccelerationSteps,
+                                 uint32_t arm2JointAccelerationSteps) {
+    const float arm1AccelDegS2 =
+        static_cast<float>(arm1AccelerationSteps) / STEPS_PER_DEG_ARM1;
+    const float arm2JointAccelDegS2 =
+        static_cast<float>(arm2JointAccelerationSteps) / STEPS_PER_DEG_ARM2;
+    const float arm2MotorAccelDegS2 =
+        arm2JointAccelDegS2 + fabsf(ARM2_ARM1_COUPLING) * arm1AccelDegS2;
+    return stepHz(arm2MotorAccelDegS2 * STEPS_PER_DEG_ARM2);
 }
 
 float autoArmSpeedScale() {
@@ -198,7 +237,8 @@ void updateActualRobotPosition() {
 
     JointPosition measured;
     measured.arm1Deg = arm1StepsToDegrees(stepperArm1->getCurrentPosition());
-    measured.arm2Deg = arm2StepsToDegrees(stepperArm2->getCurrentPosition());
+    measured.arm2Deg = arm2StepsToDegrees(
+        stepperArm2->getCurrentPosition(), measured.arm1Deg);
     measured.zMm = zStepsToMillimeters(stepperZ->getCurrentPosition());
 
     if (!jointPositionFinite(measured)) {
@@ -261,20 +301,27 @@ void commandManualJointPosition(const JointPosition& target, float deltaTimeSeco
     // EN: After returning from AUTO, manual control always restores base accelerations.
     // UA: Після повернення з AUTO ручне керування завжди відновлює базові прискорення.
     stepperArm1->setAcceleration(ARM1_ACCEL);
-    stepperArm2->setAcceleration(ARM2_ACCEL);
+    stepperArm2->setAcceleration(
+        arm2CoupledAcceleration(ARM1_ACCEL, ARM2_ACCEL));
     stepperZ->setAcceleration(Z_ACCEL);
 
     const JointPosition clamped = clampJointPosition(target);
 
     if (deltaTimeSeconds > 0.0f) {
         const float arm1Delta = fabsf(clamped.arm1Deg - robot.joints.arm1Deg);
-        const float arm2Delta = fabsf(clamped.arm2Deg - robot.joints.arm2Deg);
+        const float previousArm2MotorDeg =
+            arm2JointToMotorDegrees(robot.joints.arm1Deg, robot.joints.arm2Deg);
+        const float targetArm2MotorDeg =
+            arm2JointToMotorDegrees(clamped.arm1Deg, clamped.arm2Deg);
+        const float arm2MotorDelta = fabsf(targetArm2MotorDeg - previousArm2MotorDeg);
         const float zDelta = fabsf(clamped.zMm - robot.joints.zMm);
 
         const uint32_t arm1ManualMaxHz = stepHz(
             ARM1_JOG_SPEED_DEG_S * STEPS_PER_DEG_ARM1);
+        const float arm2MotorManualMaxDegS = arm2MotorSpeedForJointSpeeds(
+            ARM1_JOG_SPEED_DEG_S, ARM2_JOG_SPEED_DEG_S);
         const uint32_t arm2ManualMaxHz = stepHz(
-            ARM2_JOG_SPEED_DEG_S * STEPS_PER_DEG_ARM2);
+            arm2MotorManualMaxDegS * STEPS_PER_DEG_ARM2);
         const uint32_t zManualMaxHz = stepHz(
             Z_JOG_SPEED_MM_S * STEPS_PER_MM_Z);
 
@@ -283,9 +330,9 @@ void commandManualJointPosition(const JointPosition& target, float deltaTimeSeco
                 arm1Delta / deltaTimeSeconds * STEPS_PER_DEG_ARM1,
                 static_cast<float>(arm1ManualMaxHz))));
         }
-        if (arm2Delta > 0.0001f) {
+        if (arm2MotorDelta > 0.0001f) {
             stepperArm2->setSpeedInHz(stepHz(fminf(
-                arm2Delta / deltaTimeSeconds * STEPS_PER_DEG_ARM2,
+                arm2MotorDelta / deltaTimeSeconds * STEPS_PER_DEG_ARM2,
                 static_cast<float>(arm2ManualMaxHz))));
         }
         if (zDelta > 0.0001f) {
@@ -296,7 +343,7 @@ void commandManualJointPosition(const JointPosition& target, float deltaTimeSeco
     }
 
     stepperArm1->moveTo(arm1DegreesToSteps(clamped.arm1Deg));
-    stepperArm2->moveTo(arm2DegreesToSteps(clamped.arm2Deg));
+    stepperArm2->moveTo(arm2DegreesToSteps(clamped.arm1Deg, clamped.arm2Deg));
     stepperZ->moveTo(zMillimetersToSteps(clamped.zMm));
 
     robot.joints = clamped;
@@ -324,24 +371,36 @@ void commandAutoJointPosition(const JointPosition& target) {
 
     const float d1 = fabsf(clamped.arm1Deg - robot.actualJoints.arm1Deg);
     const float d2 = fabsf(clamped.arm2Deg - robot.actualJoints.arm2Deg);
+    const float actualArm2MotorDeg = arm2JointToMotorDegrees(
+        robot.actualJoints.arm1Deg, robot.actualJoints.arm2Deg);
+    const float targetArm2MotorDeg =
+        arm2JointToMotorDegrees(clamped.arm1Deg, clamped.arm2Deg);
+    const float d2Motor = fabsf(targetArm2MotorDeg - actualArm2MotorDeg);
     const float dz = fabsf(clamped.zMm - robot.actualJoints.zMm);
 
     const float speedScale = autoArmSpeedScale();
     const float arm1AutoSpeed = AUTO_ARM1_SPEED_DEG_S * speedScale;
     const float arm2AutoSpeed = AUTO_ARM2_SPEED_DEG_S * speedScale;
+    const float arm2MotorAutoSpeed =
+        arm2MotorSpeedForJointSpeeds(arm1AutoSpeed, arm2AutoSpeed);
     const float zAutoSpeed = AUTO_Z_SPEED_MM_S * speedScale;
 
     // PL: Przyspieszenia rosną proporcjonalnie do override prędkości.
     // EN: Accelerations increase proportionally with the speed override.
     // UA: Прискорення зростають пропорційно до корекції швидкості.
-    stepperArm1->setAcceleration(scaledAutoAcceleration(ARM1_ACCEL));
-    stepperArm2->setAcceleration(scaledAutoAcceleration(ARM2_ACCEL));
+    const uint32_t arm1AutoAccel = scaledAutoAcceleration(ARM1_ACCEL);
+    const uint32_t arm2JointAutoAccel = scaledAutoAcceleration(ARM2_ACCEL);
+    stepperArm1->setAcceleration(arm1AutoAccel);
+    stepperArm2->setAcceleration(
+        arm2CoupledAcceleration(arm1AutoAccel, arm2JointAutoAccel));
     stepperZ->setAcceleration(scaledAutoAcceleration(Z_ACCEL));
 
     const float t1 = d1 / arm1AutoSpeed;
     const float t2 = d2 / arm2AutoSpeed;
+    const float t2Motor = d2Motor / arm2MotorAutoSpeed;
     const float tz = dz / zAutoSpeed;
-    const float moveTime = fmaxf(0.01f, fmaxf(t1, fmaxf(t2, tz)));
+    const float moveTime =
+        fmaxf(0.01f, fmaxf(t1, fmaxf(t2, fmaxf(t2Motor, tz))));
 
     if (!isfinite(moveTime)) {
         Serial.println("NUMERIC ERROR AUTO: nieprawidlowy czas ruchu");
@@ -352,9 +411,9 @@ void commandAutoJointPosition(const JointPosition& target) {
         stepperArm1->setSpeedInHz(stepHz(
             d1 / moveTime * STEPS_PER_DEG_ARM1));
     }
-    if (d2 > 0.001f) {
+    if (d2Motor > 0.001f) {
         stepperArm2->setSpeedInHz(stepHz(
-            d2 / moveTime * STEPS_PER_DEG_ARM2));
+            d2Motor / moveTime * STEPS_PER_DEG_ARM2));
     }
     if (dz > 0.001f) {
         stepperZ->setSpeedInHz(stepHz(
@@ -362,7 +421,7 @@ void commandAutoJointPosition(const JointPosition& target) {
     }
 
     stepperArm1->moveTo(arm1DegreesToSteps(clamped.arm1Deg));
-    stepperArm2->moveTo(arm2DegreesToSteps(clamped.arm2Deg));
+    stepperArm2->moveTo(arm2DegreesToSteps(clamped.arm1Deg, clamped.arm2Deg));
     stepperZ->moveTo(zMillimetersToSteps(clamped.zMm));
 
     robot.joints = clamped;
