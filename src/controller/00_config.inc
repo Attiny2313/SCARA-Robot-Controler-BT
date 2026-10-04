@@ -91,21 +91,44 @@ constexpr float ARM_LENGTH_2_MM = 114.0f; //Longer Arm2 Pybot with Mantis Grippe
 constexpr float MOTOR_STEPS_REV = 200.0f;
 constexpr float MICROSTEPS      = 16.0f;
 
-constexpr float GEAR_ARM1 = 4.5f;
-constexpr float GEAR_ARM2 = 7.280f;
+// PL: Przełożenia wynikają bezpośrednio z liczby zębów kół pasowych.
+//     ARM1: 16 -> 72.
+//     ARM2: 16 -> 62, następnie wspólna oś 33 -> 62.
+// EN: Gear ratios are calculated directly from pulley tooth counts.
+//     ARM1: 16 -> 72.
+//     ARM2: 16 -> 62, then common shaft 33 -> 62.
+// UA: Передавальні відношення обчислюються безпосередньо з кількості зубців шківів.
+//     ARM1: 16 -> 72.
+//     ARM2: 16 -> 62, далі спільний вал 33 -> 62.
+constexpr float ARM1_MOTOR_PULLEY_TEETH = 16.0f;
+constexpr float ARM1_DRIVEN_PULLEY_TEETH = 72.0f;
+
+constexpr float ARM2_MOTOR_PULLEY_TEETH = 16.0f;
+constexpr float ARM2_STAGE1_DRIVEN_TEETH = 62.0f;
+constexpr float ARM2_STAGE2_DRIVE_TEETH = 33.0f;
+constexpr float ARM2_FINAL_DRIVEN_TEETH = 62.0f;
+
+constexpr float GEAR_ARM1 =
+    ARM1_DRIVEN_PULLEY_TEETH / ARM1_MOTOR_PULLEY_TEETH;
+
+constexpr float GEAR_ARM2 =
+    (ARM2_STAGE1_DRIVEN_TEETH / ARM2_MOTOR_PULLEY_TEETH) *
+    (ARM2_FINAL_DRIVEN_TEETH / ARM2_STAGE2_DRIVE_TEETH);
+
 constexpr float Z_SCREW_LEAD_MM = 2.0f;
 constexpr float GEAR_Z          = 1.0f;
 
-// PL: Mechaniczne sprzężenie ARM1 -> ARM2. Z pomiaru: ruch ARM1 o +90 deg
-//     powoduje zmianę fizycznego kąta ARM2 o -30 deg przy nieruchomym silniku ARM2.
-//     Dlatego silnik ARM2 dostaje liniową kompensację +ARM1/3.
-// EN: Mechanical ARM1 -> ARM2 coupling. Measured +90 deg on ARM1 changes the
-//     physical ARM2 joint by -30 deg with the ARM2 motor stationary, so the
-//     ARM2 motor command includes a linear +ARM1/3 compensation.
-// UA: Механічний зв'язок ARM1 -> ARM2. За виміром +90 deg ARM1 змінює фізичний
-//     кут ARM2 на -30 deg при нерухомому двигуні ARM2, тому команда двигуна ARM2
-//     містить лінійну компенсацію +ARM1/3.
-constexpr float ARM2_ARM1_COUPLING = 1.0f / 3.0f;
+// PL: Mechaniczne sprzężenie ARM1 -> ARM2 wynika z ostatniego stopnia 33 -> 62.
+//     Obrót ARM1 zmienia względny kąt ARM2, dlatego silnik ARM2 kompensuje go
+//     współczynnikiem 33/62.
+// EN: Mechanical ARM1 -> ARM2 coupling comes from the final 33 -> 62 stage.
+//     ARM1 rotation changes the relative ARM2 joint angle, so the ARM2 motor
+//     compensates it with a 33/62 factor.
+// UA: Механічний зв'язок ARM1 -> ARM2 виникає на останньому ступені 33 -> 62.
+//     Обертання ARM1 змінює відносний кут ARM2, тому двигун ARM2 компенсує його
+//     коефіцієнтом 33/62.
+constexpr float ARM2_ARM1_COUPLING =
+    ARM2_STAGE2_DRIVE_TEETH / ARM2_FINAL_DRIVEN_TEETH;
 
 // PL: Znak osi pozwala odwrócić kierunek logiczny bez przepinania przewodów.
 // EN: Axis sign allows logical direction reversal without rewiring the motor.
