@@ -126,11 +126,17 @@ void commandToolJointPosition(const JointPosition& target, float deltaTimeSecond
     const JointPosition clamped = clampJointPosition(target);
 
     const float arm1Delta = fabsf(clamped.arm1Deg - robot.actualJoints.arm1Deg);
-    const float arm2Delta = fabsf(clamped.arm2Deg - robot.actualJoints.arm2Deg);
+    const float actualArm2MotorDeg = arm2JointToMotorDegrees(
+        robot.actualJoints.arm1Deg, robot.actualJoints.arm2Deg);
+    const float targetArm2MotorDeg =
+        arm2JointToMotorDegrees(clamped.arm1Deg, clamped.arm2Deg);
+    const float arm2MotorDelta = fabsf(targetArm2MotorDeg - actualArm2MotorDeg);
     const float zDelta = fabsf(clamped.zMm - robot.actualJoints.zMm);
 
     const uint32_t arm1MaxHz = stepHz(TOOL_ARM_MAX_SPEED_DEG_S * STEPS_PER_DEG_ARM1);
-    const uint32_t arm2MaxHz = stepHz(TOOL_ARM_MAX_SPEED_DEG_S * STEPS_PER_DEG_ARM2);
+    const float arm2MotorMaxDegS = arm2MotorSpeedForJointSpeeds(
+        TOOL_ARM_MAX_SPEED_DEG_S, TOOL_ARM_MAX_SPEED_DEG_S);
+    const uint32_t arm2MaxHz = stepHz(arm2MotorMaxDegS * STEPS_PER_DEG_ARM2);
     const uint32_t zMaxHz = stepHz(Z_JOG_SPEED_MM_S * STEPS_PER_MM_Z);
 
     if (arm1Delta > 0.0001f) {
@@ -138,9 +144,9 @@ void commandToolJointPosition(const JointPosition& target, float deltaTimeSecond
             arm1Delta / deltaTimeSeconds * STEPS_PER_DEG_ARM1,
             static_cast<float>(arm1MaxHz))));
     }
-    if (arm2Delta > 0.0001f) {
+    if (arm2MotorDelta > 0.0001f) {
         stepperArm2->setSpeedInHz(stepHz(fminf(
-            arm2Delta / deltaTimeSeconds * STEPS_PER_DEG_ARM2,
+            arm2MotorDelta / deltaTimeSeconds * STEPS_PER_DEG_ARM2,
             static_cast<float>(arm2MaxHz))));
     }
     if (zDelta > 0.0001f) {
@@ -149,12 +155,17 @@ void commandToolJointPosition(const JointPosition& target, float deltaTimeSecond
             static_cast<float>(zMaxHz))));
     }
 
-    stepperArm1->setAcceleration(stepHz(TOOL_ARM_ACCEL_DEG_S2 * STEPS_PER_DEG_ARM1));
-    stepperArm2->setAcceleration(stepHz(TOOL_ARM_ACCEL_DEG_S2 * STEPS_PER_DEG_ARM2));
+    const uint32_t toolArm1Accel =
+        stepHz(TOOL_ARM_ACCEL_DEG_S2 * STEPS_PER_DEG_ARM1);
+    const uint32_t toolArm2JointAccel =
+        stepHz(TOOL_ARM_ACCEL_DEG_S2 * STEPS_PER_DEG_ARM2);
+    stepperArm1->setAcceleration(toolArm1Accel);
+    stepperArm2->setAcceleration(
+        arm2CoupledAcceleration(toolArm1Accel, toolArm2JointAccel));
     stepperZ->setAcceleration(Z_ACCEL);
 
     stepperArm1->moveTo(arm1DegreesToSteps(clamped.arm1Deg));
-    stepperArm2->moveTo(arm2DegreesToSteps(clamped.arm2Deg));
+    stepperArm2->moveTo(arm2DegreesToSteps(clamped.arm1Deg, clamped.arm2Deg));
     stepperZ->moveTo(zMillimetersToSteps(clamped.zMm));
 
     robot.joints = clamped;
@@ -421,12 +432,15 @@ bool initializeSteppers() {
     stepperArm1->setSpeedInHz(stepHz(
         ARM1_JOG_SPEED_DEG_S * STEPS_PER_DEG_ARM1));
     stepperArm2->setSpeedInHz(stepHz(
-        ARM2_JOG_SPEED_DEG_S * STEPS_PER_DEG_ARM2));
+        arm2MotorSpeedForJointSpeeds(
+            ARM1_JOG_SPEED_DEG_S, ARM2_JOG_SPEED_DEG_S) *
+        STEPS_PER_DEG_ARM2));
     stepperZ->setSpeedInHz(stepHz(
         Z_JOG_SPEED_MM_S * STEPS_PER_MM_Z));
 
     stepperArm1->setAcceleration(ARM1_ACCEL);
-    stepperArm2->setAcceleration(ARM2_ACCEL);
+    stepperArm2->setAcceleration(
+        arm2CoupledAcceleration(ARM1_ACCEL, ARM2_ACCEL));
     stepperZ->setAcceleration(Z_ACCEL);
 
     // PL: ARM1 i ARM2 nadal korzystają z ręcznego ustawienia HOME przed resetem.
@@ -437,7 +451,8 @@ bool initializeSteppers() {
     // UA: ARM1/ARM2 як і раніше вручну встановлюються в HOME перед скиданням.
     //     Для Z тут задається лише тимчасовий відносний нуль до підтвердження A+B.
     stepperArm1->setCurrentPosition(arm1DegreesToSteps(HOME_ARM1_DEG));
-    stepperArm2->setCurrentPosition(arm2DegreesToSteps(HOME_ARM2_DEG));
+    stepperArm2->setCurrentPosition(
+        arm2DegreesToSteps(HOME_ARM1_DEG, HOME_ARM2_DEG));
     stepperZ->setCurrentPosition(zMillimetersToSteps(HOME_Z_MM));
 
     return true;
