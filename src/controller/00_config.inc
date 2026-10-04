@@ -96,6 +96,17 @@ constexpr float GEAR_ARM2 = 7.280f;
 constexpr float Z_SCREW_LEAD_MM = 2.0f;
 constexpr float GEAR_Z          = 1.0f;
 
+// PL: Mechaniczne sprzężenie ARM1 -> ARM2. Z pomiaru: ruch ARM1 o +90 deg
+//     powoduje zmianę fizycznego kąta ARM2 o -30 deg przy nieruchomym silniku ARM2.
+//     Dlatego silnik ARM2 dostaje liniową kompensację +ARM1/3.
+// EN: Mechanical ARM1 -> ARM2 coupling. Measured +90 deg on ARM1 changes the
+//     physical ARM2 joint by -30 deg with the ARM2 motor stationary, so the
+//     ARM2 motor command includes a linear +ARM1/3 compensation.
+// UA: Механічний зв'язок ARM1 -> ARM2. За виміром +90 deg ARM1 змінює фізичний
+//     кут ARM2 на -30 deg при нерухомому двигуні ARM2, тому команда двигуна ARM2
+//     містить лінійну компенсацію +ARM1/3.
+constexpr float ARM2_ARM1_COUPLING = 1.0f / 3.0f;
+
 // PL: Znak osi pozwala odwrócić kierunek logiczny bez przepinania przewodów.
 // EN: Axis sign allows logical direction reversal without rewiring the motor.
 // UA: Знак осі дозволяє змінити логічний напрямок без перепідключення двигуна.
