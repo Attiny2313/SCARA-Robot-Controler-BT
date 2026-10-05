@@ -158,6 +158,16 @@ void beginSerialControlSession() {
     serialControlLastPacketMs = millis();
 
     if (newSession) {
+        // PL: PC przejmuje wejście wyłącznie po swojej procedurze uzbrojenia.
+        //     Pad BT jest rozbrajany, aby dwa źródła nie były aktywne jednocześnie.
+        // EN: The PC takes ownership only after its own arming procedure.
+        //     Disarm the Bluetooth gamepad so two input sources cannot be active at once.
+        // UA: ПК отримує керування лише після власної процедури активації.
+        //     Bluetooth-геймпад вимикається, щоб два джерела не були активні одночасно.
+        robot.gamepadArmed = false;
+        gamepadNeutralSinceMs = 0;
+        previousPadStart = false;
+        previousPadX = false;
         serialControlArmed = false;
         resetSerialPadState();
         Serial.println("PC CONTROL: polaczono, pozostaw sterowanie neutralne");
