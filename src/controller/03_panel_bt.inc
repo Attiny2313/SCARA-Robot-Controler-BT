@@ -3,7 +3,7 @@
 // UA: РЕЖИМИ ТА ПАНЕЛЬ КЕРУВАННЯ
 // ============================================================
 void toggleControlMode() {
-    if (robot.estopLatched || !robot.gamepadArmed ||
+    if (robot.estopLatched || !manualControlArmed() ||
         robot.operatingMode != OperatingMode::MANUAL) return;
 
     robot.controlMode =
@@ -26,6 +26,7 @@ void toggleOperatingMode() {
         robot.operatingMode = OperatingMode::AUTO;
         robot.autoState = AutoState::IDLE;
         robot.gamepadArmed = false;
+        serialControlArmed = false;
         previousPadStart = false;
         previousPadX = false;
         Serial.printf("Tryb pracy: AUTO (%u punktów). START = uruchom/pauza\n",
@@ -36,13 +37,14 @@ void toggleOperatingMode() {
         robot.autoState = AutoState::IDLE;
         autoMotionStarted = false;
         robot.gamepadArmed = false;
+        serialControlArmed = false;
         gamepadNeutralSinceMs = 0;
         previousPadStart = false;
         previousPadX = false;
         updateActualRobotPosition();
         robot.joints = robot.actualJoints;
         robot.tcp = robot.actualTcp;
-        Serial.println("Tryb pracy: MANUAL - oczekiwanie na neutralny pad");
+        Serial.println("Tryb pracy: MANUAL - oczekiwanie na neutralne sterowanie");
     }
 
     digitalWrite(PIN_LED_STATUS,
@@ -70,7 +72,9 @@ void printCurrentPosition() {
                   robot.controlMode == ControlMode::TOOL ? "TOOL" : "JOINT");
     Serial.printf("TEACH points: %u/%u\n", programPointCount, MAX_PROGRAM_POINTS);
     Serial.printf("AUTO speed: %u%%\n", autoArmSpeedPercent);
-    Serial.printf("Pad: %s\n", robot.gamepadArmed ? "ARMED" : "SAFE");
+    Serial.printf("Pad BT: %s  PC USB: %s\n",
+                  robot.gamepadArmed ? "ARMED" : "SAFE",
+                  serialControlArmed ? "ARMED" : "SAFE");
     Serial.println("-----------------------");
 }
 
