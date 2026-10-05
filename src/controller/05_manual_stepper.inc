@@ -164,7 +164,7 @@ void updateToolOrientationTarget(const JointPosition& targetJoints,
 // UA: TOOL має окреме керування осями, однакове кутове прискорення обох плечей
 //     та невелике випередження цілі TCP для плавнішого безперервного руху.
 void commandToolJointPosition(const JointPosition& target, float deltaTimeSeconds) {
-    if (robot.estopLatched || !robot.gamepadArmed ||
+    if (robot.estopLatched || !manualControlArmed() ||
         robot.operatingMode != OperatingMode::MANUAL ||
         robot.controlMode != ControlMode::TOOL) return;
 
