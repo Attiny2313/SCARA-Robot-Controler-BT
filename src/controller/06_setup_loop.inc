@@ -105,6 +105,7 @@ void setup() {
     Serial.println("AUTO: każdy punkt odtwarza także zapisany stan RELAY");
     Serial.println("AUTO SPEED: D-pad UP/DOWN = +/-10%, LEFT = 100% (50..250%)");
     Serial.println("BT LED: stale = pad polaczony, miganie = oczekiwanie");
+    Serial.println("PC USB: aplikacja laczy sie przez Serial 115200 i wysyla PCPAD");
     Serial.printf("Wczytano %u punktów programu\n", programPointCount);
     printCurrentPosition();
 
@@ -121,6 +122,15 @@ void loop() {
     // EN: Bluepad32 should be serviced as frequently as possible.
     // UA: Bluepad32 потрібно обслуговувати якомога частіше.
     BP32.update();
+
+    // PL: USB Serial jest obsługiwany niezależnie od Bluepad32. Aplikacja PC
+    //     przejmuje wejście tylko po handshake PCHELLO i świeżych pakietach PCPAD.
+    // EN: USB Serial is serviced independently from Bluepad32. The PC application
+    //     owns the input only after PCHELLO and while fresh PCPAD packets arrive.
+    // UA: USB Serial обслуговується незалежно від Bluepad32. Застосунок ПК
+    //     отримує керування лише після PCHELLO і за наявності свіжих пакетів PCPAD.
+    serviceSerialControlRx();
+    serviceSerialControlSafety();
 
     updateEmergencyStop();
 
@@ -143,6 +153,7 @@ void loop() {
     updateBluetoothLed();
     refreshServos();
     refreshDisplay();
+    sendSerialControlStatus();
 
     const uint32_t now = millis();
     if (now - lastControlMs >= CONTROL_PERIOD_MS) {
@@ -155,7 +166,11 @@ void loop() {
         deltaTimeSeconds = clampFloat(deltaTimeSeconds, 0.0f, MAX_CONTROL_DT_S);
 
         if (!robot.estopLatched) {
-            processGamepad(deltaTimeSeconds);
+            if (serialControlOwnsInput()) {
+                processSerialControl(deltaTimeSeconds);
+            } else {
+                processGamepad(deltaTimeSeconds);
+            }
             processAuto();
         }
     }
