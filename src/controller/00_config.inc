@@ -370,6 +370,21 @@ bool previousTeachButton = LOW;
 bool previousPadStart = false;
 bool previousPadX = false;
 
+// PL: Sterowanie ręczne może zostać uzbrojone przez fizyczny pad Bluetooth
+//     albo przez aplikację PC po USB Serial. Ruch jest dozwolony tylko wtedy,
+//     gdy co najmniej jedno aktywne źródło sterowania przeszło procedurę SAFE/ARMED.
+// EN: Manual control may be armed by either the physical Bluetooth gamepad or
+//     the PC application over USB Serial. Motion is allowed only after an active
+//     input source has passed the SAFE/ARMED procedure.
+// UA: Ручне керування може бути активоване фізичним Bluetooth-геймпадом або
+//     застосунком ПК через USB Serial. Рух дозволяється лише після проходження
+//     активним джерелом процедури SAFE/ARMED.
+bool serialControlArmed = false;
+
+bool manualControlArmed() {
+    return robot.gamepadArmed || serialControlArmed;
+}
+
 // PL: Centralna funkcja ustawia logiczny stan przekaźnika i uwzględnia polaryzację modułu.
 // EN: Central relay setter stores the logical state and applies module polarity.
 // UA: Центральна функція встановлює логічний стан реле та враховує полярність модуля.
