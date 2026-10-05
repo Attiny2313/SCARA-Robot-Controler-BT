@@ -16,11 +16,14 @@ cd pc_controller
 py -m pip install -r requirements.txt
 ```
 
-Run:
+Run directly:
 
 ```powershell
 py SCARA_Remote.py
 ```
+
+On Windows you can also double-click `run_windows.bat`. It checks for `pyserial`,
+installs it from `requirements.txt` when needed, and starts the controller.
 
 Close PlatformIO Serial Monitor before connecting the application because only one
 program can normally own the COM port at a time.
