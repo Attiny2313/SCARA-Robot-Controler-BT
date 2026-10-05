@@ -6,6 +6,7 @@
 bool toolTargetInitialized = false;
 bool toolElbowUp = true;
 bool toolLimitActive = false;
+bool toolElbowSwitchLatched = false;
 
 float toolWorldHeadingDeg = HOME_ARM1_DEG + HOME_ARM2_DEG + HOME_TOOL_ROTATE_DEG;
 
@@ -14,6 +15,17 @@ constexpr float TOOL_TCP_LOOKAHEAD_MM = 2.0f;
 constexpr float TOOL_XY_SPEED_SCALE = 1.50f;
 constexpr float TOOL_ARM_MAX_SPEED_DEG_S = 35.0f;
 constexpr float TOOL_ARM_ACCEL_DEG_S2 = 180.0f;
+
+// PL: Zmiana gałęzi IK jest dozwolona tylko bardzo blisko wyprostowania.
+//     Przy obecnym marginesie obszaru roboczego ARM2 dochodzi do ok. +/-5.7 deg,
+//     więc próg 7 deg pozwala przejść przez osobliwość bez dużego skoku osi.
+// EN: IK branch switching is allowed only very close to full extension.
+//     With the current workspace margin ARM2 reaches about +/-5.7 deg, so a
+//     7 deg threshold allows crossing the singularity without a large joint jump.
+// UA: Перемикання гілки IK дозволене лише дуже близько до повного випрямлення.
+//     За поточного запасу робочої зони ARM2 доходить приблизно до +/-5.7 deg,
+//     тому поріг 7 deg дозволяє пройти сингулярність без великого стрибка осей.
+constexpr float TOOL_ELBOW_SWITCH_MAX_ABS_DEG = 7.0f;
 
 // PL: Znak opisuje wpływ dodatniego kąta serwa obrotu na orientację narzędzia
 //     względem podstawy robota. Jeżeli na gotowej mechanice kompensacja działa
@@ -74,6 +86,44 @@ bool calculateToolJoints(const CartesianPosition& desired, JointPosition& result
     return inverseKinematics(desired.xMm, desired.yMm, toolElbowUp, result);
 }
 
+// PL: Przy próbie wyjazdu TCP poza zewnętrzną granicę obszaru roboczego możemy
+//     przełączyć elbow-up <-> elbow-down, ale tylko gdy rzeczywisty ARM2 jest
+//     blisko 0 deg. Zatrzask zapobiega wielokrotnemu przełączaniu przy trzymaniu
+//     drążka cały czas na zewnątrz.
+// EN: When the TCP is commanded beyond the outer workspace boundary, elbow-up
+//     <-> elbow-down may switch only while the actual ARM2 angle is near 0 deg.
+//     The latch prevents repeated toggling while the stick is held outward.
+// UA: Коли TCP задається за зовнішню межу робочої зони, elbow-up <-> elbow-down
+//     може перемикатися лише коли фактичний кут ARM2 близький до 0 deg.
+//     Фіксатор запобігає повторному перемиканню при утриманні стіка назовні.
+bool trySwitchToolElbowBranch(const CartesianPosition& desired,
+                              bool requestedBeyondOuter,
+                              bool requestedOutward,
+                              JointPosition& result) {
+    if (!requestedBeyondOuter || !requestedOutward || toolElbowSwitchLatched) {
+        return false;
+    }
+
+    if (fabsf(robot.actualJoints.arm2Deg) > TOOL_ELBOW_SWITCH_MAX_ABS_DEG) {
+        return false;
+    }
+
+    JointPosition alternate;
+    const bool alternateElbowUp = !toolElbowUp;
+    if (!inverseKinematics(desired.xMm, desired.yMm, alternateElbowUp, alternate)) {
+        return false;
+    }
+
+    toolElbowUp = alternateElbowUp;
+    toolElbowSwitchLatched = true;
+    result = alternate;
+
+    Serial.printf("TOOL ELBOW SWITCH: %s, A1=%.2f A2=%.2f\n",
+                  toolElbowUp ? "UP" : "DOWN",
+                  result.arm1Deg, result.arm2Deg);
+    return true;
+}
+
 // PL: W TOOL serwo obrotu jest częścią orientacji narzędzia. Zapamiętujemy
 //     orientację względem podstawy: A1 + A2 + SERVO. Podczas ruchu X/Y serwo
 //     kompensuje zmianę obu ramion, a prawy analog X zmienia właśnie tę orientację.
@@ -126,11 +176,17 @@ void commandToolJointPosition(const JointPosition& target, float deltaTimeSecond
     const JointPosition clamped = clampJointPosition(target);
 
     const float arm1Delta = fabsf(clamped.arm1Deg - robot.actualJoints.arm1Deg);
-    const float arm2Delta = fabsf(clamped.arm2Deg - robot.actualJoints.arm2Deg);
+    const float actualArm2MotorDeg = arm2JointToMotorDegrees(
+        robot.actualJoints.arm1Deg, robot.actualJoints.arm2Deg);
+    const float targetArm2MotorDeg =
+        arm2JointToMotorDegrees(clamped.arm1Deg, clamped.arm2Deg);
+    const float arm2MotorDelta = fabsf(targetArm2MotorDeg - actualArm2MotorDeg);
     const float zDelta = fabsf(clamped.zMm - robot.actualJoints.zMm);
 
     const uint32_t arm1MaxHz = stepHz(TOOL_ARM_MAX_SPEED_DEG_S * STEPS_PER_DEG_ARM1);
-    const uint32_t arm2MaxHz = stepHz(TOOL_ARM_MAX_SPEED_DEG_S * STEPS_PER_DEG_ARM2);
+    const float arm2MotorMaxDegS = arm2MotorSpeedForJointSpeeds(
+        TOOL_ARM_MAX_SPEED_DEG_S, TOOL_ARM_MAX_SPEED_DEG_S);
+    const uint32_t arm2MaxHz = stepHz(arm2MotorMaxDegS * STEPS_PER_DEG_ARM2);
     const uint32_t zMaxHz = stepHz(Z_JOG_SPEED_MM_S * STEPS_PER_MM_Z);
 
     if (arm1Delta > 0.0001f) {
@@ -138,9 +194,9 @@ void commandToolJointPosition(const JointPosition& target, float deltaTimeSecond
             arm1Delta / deltaTimeSeconds * STEPS_PER_DEG_ARM1,
             static_cast<float>(arm1MaxHz))));
     }
-    if (arm2Delta > 0.0001f) {
+    if (arm2MotorDelta > 0.0001f) {
         stepperArm2->setSpeedInHz(stepHz(fminf(
-            arm2Delta / deltaTimeSeconds * STEPS_PER_DEG_ARM2,
+            arm2MotorDelta / deltaTimeSeconds * STEPS_PER_DEG_ARM2,
             static_cast<float>(arm2MaxHz))));
     }
     if (zDelta > 0.0001f) {
@@ -149,12 +205,17 @@ void commandToolJointPosition(const JointPosition& target, float deltaTimeSecond
             static_cast<float>(zMaxHz))));
     }
 
-    stepperArm1->setAcceleration(stepHz(TOOL_ARM_ACCEL_DEG_S2 * STEPS_PER_DEG_ARM1));
-    stepperArm2->setAcceleration(stepHz(TOOL_ARM_ACCEL_DEG_S2 * STEPS_PER_DEG_ARM2));
+    const uint32_t toolArm1Accel =
+        stepHz(TOOL_ARM_ACCEL_DEG_S2 * STEPS_PER_DEG_ARM1);
+    const uint32_t toolArm2JointAccel =
+        stepHz(TOOL_ARM_ACCEL_DEG_S2 * STEPS_PER_DEG_ARM2);
+    stepperArm1->setAcceleration(toolArm1Accel);
+    stepperArm2->setAcceleration(
+        arm2CoupledAcceleration(toolArm1Accel, toolArm2JointAccel));
     stepperZ->setAcceleration(Z_ACCEL);
 
     stepperArm1->moveTo(arm1DegreesToSteps(clamped.arm1Deg));
-    stepperArm2->moveTo(arm2DegreesToSteps(clamped.arm2Deg));
+    stepperArm2->moveTo(arm2DegreesToSteps(clamped.arm1Deg, clamped.arm2Deg));
     stepperZ->moveTo(zMillimetersToSteps(clamped.zMm));
 
     robot.joints = clamped;
@@ -169,6 +230,7 @@ void processJointMode(float axisX, float axisY, float axisZ, float deltaTimeSeco
     // EN: After leaving TOOL, the next TOOL entry resynchronizes the TCP target to actual position.
     // UA: Після виходу з TOOL наступний вхід у TOOL синхронізує ціль TCP з фактичним положенням.
     toolTargetInitialized = false;
+    toolElbowSwitchLatched = false;
     setToolLimitActive(false);
 
     JointPosition target = robot.joints;
@@ -199,6 +261,7 @@ void processToolMode(float axisX, float axisY, float axisZ,
         robot.joints = robot.actualJoints;
         robot.tcp = robot.actualTcp;
         toolElbowUp = robot.actualJoints.arm2Deg >= 0.0f;
+        toolElbowSwitchLatched = false;
         toolWorldHeadingDeg = robot.actualJoints.arm1Deg + robot.actualJoints.arm2Deg +
                               TOOL_SERVO_KINEMATIC_SIGN * robot.toolRotateDeg;
         toolTargetInitialized = true;
@@ -227,10 +290,43 @@ void processToolMode(float axisX, float axisY, float axisZ,
     desired.yMm += dy;
     desired.zMm = clampFloat(robot.tcp.zMm + dz, Z_MIN_MM, Z_MAX_MM);
     clampToolLookahead(actual, desired);
+
+    const bool requestedXY = fabsf(dx) > 0.0001f || fabsf(dy) > 0.0001f;
+    const float radialCommand = actual.xMm * dx + actual.yMm * dy;
+    const bool requestedOutward = requestedXY && radialCommand > 0.0001f;
+
+    // PL: Zatrzask jest zwalniany po puszczeniu kierunku "na zewnątrz".
+    //     Dzięki temu jedno ciągłe wychylenie drążka może zmienić gałąź tylko raz.
+    // EN: Release the branch-switch latch after the outward command is released.
+    //     One continuous outward stick command can therefore switch only once.
+    // UA: Фіксатор перемикання скидається після припинення команди назовні.
+    //     Одне безперервне відхилення стіка може перемкнути гілку лише один раз.
+    if (!requestedOutward) {
+        toolElbowSwitchLatched = false;
+    }
+
+    const float maximumRadius =
+        ARM_LENGTH_1_MM + ARM_LENGTH_2_MM - TOOL_WORKSPACE_MARGIN_MM;
+    const bool requestedBeyondOuter =
+        hypotf(desired.xMm, desired.yMm) >= maximumRadius;
+
     clampToolWorkspace(desired);
 
     JointPosition calculatedJoints;
     bool xyAccepted = calculateToolJoints(desired, calculatedJoints);
+
+    // PL: Gdy operator próbuje przejść przez pełne wyprostowanie, sprawdź drugą
+    //     gałąź IK i przełącz ją tylko w małym, kontrolowanym oknie wokół A2=0.
+    // EN: When the operator tries to pass through full extension, test the other
+    //     IK branch and switch only in a small controlled window around A2=0.
+    // UA: Коли оператор намагається пройти через повне випрямлення, перевірити
+    //     іншу гілку IK і перемкнути її лише у малому вікні біля A2=0.
+    if (trySwitchToolElbowBranch(desired,
+                                 requestedBeyondOuter,
+                                 requestedOutward,
+                                 calculatedJoints)) {
+        xyAccepted = true;
+    }
 
     // PL: Jeżeli ruch po przekątnej trafia w limit osi, spróbuj zachować ruch
     //     tylko w X, a następnie tylko w Y. Dzięki temu TCP nie "zawiesza się"
@@ -272,7 +368,6 @@ void processToolMode(float axisX, float axisY, float axisZ,
 
     calculatedJoints.zMm = desired.zMm;
 
-    const bool requestedXY = fabsf(dx) > 0.0001f || fabsf(dy) > 0.0001f;
     setToolLimitActive(requestedXY && !xyAccepted);
 
     updateToolOrientationTarget(calculatedJoints, rotateCommand, deltaTimeSeconds);
@@ -421,12 +516,15 @@ bool initializeSteppers() {
     stepperArm1->setSpeedInHz(stepHz(
         ARM1_JOG_SPEED_DEG_S * STEPS_PER_DEG_ARM1));
     stepperArm2->setSpeedInHz(stepHz(
-        ARM2_JOG_SPEED_DEG_S * STEPS_PER_DEG_ARM2));
+        arm2MotorSpeedForJointSpeeds(
+            ARM1_JOG_SPEED_DEG_S, ARM2_JOG_SPEED_DEG_S) *
+        STEPS_PER_DEG_ARM2));
     stepperZ->setSpeedInHz(stepHz(
         Z_JOG_SPEED_MM_S * STEPS_PER_MM_Z));
 
     stepperArm1->setAcceleration(ARM1_ACCEL);
-    stepperArm2->setAcceleration(ARM2_ACCEL);
+    stepperArm2->setAcceleration(
+        arm2CoupledAcceleration(ARM1_ACCEL, ARM2_ACCEL));
     stepperZ->setAcceleration(Z_ACCEL);
 
     // PL: ARM1 i ARM2 nadal korzystają z ręcznego ustawienia HOME przed resetem.
@@ -437,7 +535,8 @@ bool initializeSteppers() {
     // UA: ARM1/ARM2 як і раніше вручну встановлюються в HOME перед скиданням.
     //     Для Z тут задається лише тимчасовий відносний нуль до підтвердження A+B.
     stepperArm1->setCurrentPosition(arm1DegreesToSteps(HOME_ARM1_DEG));
-    stepperArm2->setCurrentPosition(arm2DegreesToSteps(HOME_ARM2_DEG));
+    stepperArm2->setCurrentPosition(
+        arm2DegreesToSteps(HOME_ARM1_DEG, HOME_ARM2_DEG));
     stepperZ->setCurrentPosition(zMillimetersToSteps(HOME_Z_MM));
 
     return true;
