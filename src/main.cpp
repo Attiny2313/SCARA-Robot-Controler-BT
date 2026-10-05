@@ -18,4 +18,5 @@
 #include "controller/03_startup_z_home.inc"
 #include "controller/04_oled.inc"
 #include "controller/05_manual_stepper.inc"
+#include "controller/05_pc_serial.inc"
 #include "controller/06_setup_loop.inc"
