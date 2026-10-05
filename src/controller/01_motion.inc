@@ -284,7 +284,7 @@ void emergencyStopMotion() {
 // EN: Manual motion receives small position targets updated every control cycle.
 // UA: Ручний рух отримує невеликі цільові зміщення, що оновлюються в кожному циклі керування.
 void commandManualJointPosition(const JointPosition& target, float deltaTimeSeconds) {
-    if (robot.estopLatched || !robot.gamepadArmed ||
+    if (robot.estopLatched || !manualControlArmed() ||
         robot.operatingMode != OperatingMode::MANUAL) return;
 
     if (!jointPositionFinite(target)) {
