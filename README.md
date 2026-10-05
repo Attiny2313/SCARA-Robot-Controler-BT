@@ -45,6 +45,25 @@ In MANUAL mode, `START` switches between JOINT and TOOL control.
 
 In AUTO mode, `START` performs start/pause/resume. D-pad UP/DOWN changes speed by ±10%, while D-pad LEFT restores 100%.
 
+## PC USB controller
+
+The `dev` firmware also supports an optional desktop controller over USB Serial.
+The physical Bluetooth gamepad remains supported; the PC application is a second,
+exclusive input source with its own neutral-to-ARM safety procedure and a 600 ms
+communication timeout.
+
+Windows quick start:
+
+```powershell
+cd pc_controller
+.\run_windows.bat
+```
+
+The application provides two virtual joysticks, gripper/relay controls, JOINT/TOOL,
+MANUAL/AUTO, TEACH, startup Z HOME, AUTO speed controls and live robot position/status.
+
+See [pc_controller/README.md](pc_controller/README.md) for details.
+
 ## Documentation
 
 - [Documentation index](docs/README.md)
