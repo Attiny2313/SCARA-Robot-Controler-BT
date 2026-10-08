@@ -233,10 +233,17 @@ class ScaraRemote(tk.Tk):
             button_frame, text="MODE  MANUAL/AUTO", command=lambda: self.pulse_button(BTN_MODE)
         ).grid(row=1, column=0, padx=4, pady=4)
 
-        teach = tk.Button(button_frame, text="TEACH (przytrzymaj = kasuj)")
-        teach.grid(row=1, column=1, columnspan=2, padx=4, pady=4, sticky="ew")
-        teach.bind("<ButtonPress-1>", lambda _e: self.set_button(BTN_TEACH, True))
-        teach.bind("<ButtonRelease-1>", lambda _e: self.set_button(BTN_TEACH, False))
+        ttk.Button(
+            button_frame,
+            text="TEACH  Zapisz punkt",
+            command=self.send_teach_command,
+        ).grid(row=1, column=1, padx=4, pady=4, sticky="ew")
+
+        ttk.Button(
+            button_frame,
+            text="KASUJ PROGRAM",
+            command=self.confirm_clear_program,
+        ).grid(row=1, column=2, padx=4, pady=4, sticky="ew")
 
         ttk.Button(
             button_frame,
@@ -258,7 +265,7 @@ class ScaraRemote(tk.Tk):
 
         help_text = (
             "Klawiatura: WASD = lewy joystick, IJKL = prawy joystick, "
-            "Q/E = A/B, R = relay, SPACE = START, M = MODE, T = TEACH, "
+            "Q/E = A/B, R = relay, SPACE = START, M = MODE, T = zapisz punkt, "
             "H = HOME Z (A+B), strzałki = D-pad AUTO.\n"
             "Po połączeniu pozostaw wszystko neutralnie przez chwilę, aż PC zmieni stan SAFE → ARMED."
         )
@@ -293,6 +300,7 @@ class ScaraRemote(tk.Tk):
 
     def key_press(self, event):
         key = event.keysym.lower()
+        was_down = key in self.keys_down
         self.keys_down.add(key)
 
         if key == "q":
@@ -305,8 +313,8 @@ class ScaraRemote(tk.Tk):
             self.set_button(BTN_START, True)
         elif key == "m":
             self.set_button(BTN_MODE, True)
-        elif key == "t":
-            self.set_button(BTN_TEACH, True)
+        elif key == "t" and not was_down:
+            self.send_teach_command()
         elif key == "h":
             self.set_button(BTN_A | BTN_B, True)
         elif key == "up":
@@ -333,7 +341,7 @@ class ScaraRemote(tk.Tk):
         elif key == "m":
             self.set_button(BTN_MODE, False)
         elif key == "t":
-            self.set_button(BTN_TEACH, False)
+            pass
         elif key == "h":
             self.set_button(BTN_A | BTN_B, False)
         elif key == "up":
@@ -358,6 +366,27 @@ class ScaraRemote(tk.Tk):
     def pulse_dpad(self, mask, duration_ms=160):
         self.dpad |= mask
         self.after(duration_ms, lambda: setattr(self, "dpad", self.dpad & ~mask))
+
+    def send_teach_command(self):
+        if not self.ser or not self.ser.is_open or not self.handshake_ok:
+            messagebox.showwarning("SCARA Remote", "Najpierw połącz aplikację z ESP32.")
+            return
+        self.write_line("PCTEACH")
+        self.append_log("PC → ESP32: zapisz punkt TEACH")
+
+    def confirm_clear_program(self):
+        if not self.ser or not self.ser.is_open or not self.handshake_ok:
+            messagebox.showwarning("SCARA Remote", "Najpierw połącz aplikację z ESP32.")
+            return
+
+        if not messagebox.askyesno(
+            "SCARA Remote",
+            "Skasować cały zapisany program AUTO?\n\nTej operacji nie można cofnąć.",
+        ):
+            return
+
+        self.write_line("PCCLEAR")
+        self.append_log("PC → ESP32: kasuj program AUTO")
 
     def refresh_ports(self):
         ports = list(list_ports.comports())
@@ -512,6 +541,22 @@ class ScaraRemote(tk.Tk):
         if line == "PCACK,NEED_HELLO,0":
             self.handshake_ok = False
             self.append_log("ESP32 wymaga ponownego handshake.")
+            return
+
+        if line.startswith("PCACK,TEACH,"):
+            result = line.split(",", 2)[2]
+            if result.startswith("OK"):
+                self.append_log(f"TEACH OK: {result}")
+            else:
+                self.append_log(f"TEACH odrzucony: {result}")
+            return
+
+        if line.startswith("PCACK,CLEAR,"):
+            result = line.split(",", 2)[2]
+            if result == "OK":
+                self.append_log("Program AUTO skasowany.")
+            else:
+                self.append_log(f"Kasowanie odrzucone: {result}")
             return
 
         if line.startswith("PCSTATE,"):
