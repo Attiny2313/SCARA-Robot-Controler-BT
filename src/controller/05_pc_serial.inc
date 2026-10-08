@@ -7,6 +7,8 @@
 // PL: Protokół wejściowy:
 //     PCHELLO
 //     PCPAD,LX,LY,RX,RY,BUTTONS,DPAD
+//     PCTEACH
+//     PCCLEAR
 //     PCBYE
 //
 //     Osie są liczbami całkowitymi -1000..1000.
@@ -16,6 +18,8 @@
 // EN: Input protocol:
 //     PCHELLO
 //     PCPAD,LX,LY,RX,RY,BUTTONS,DPAD
+//     PCTEACH
+//     PCCLEAR
 //     PCBYE
 //
 //     Axes are integers in the -1000..1000 range.
@@ -25,6 +29,8 @@
 // UA: Вхідний протокол:
 //     PCHELLO
 //     PCPAD,LX,LY,RX,RY,BUTTONS,DPAD
+//     PCTEACH
+//     PCCLEAR
 //     PCBYE
 //
 //     Осі задаються цілими числами -1000..1000.
