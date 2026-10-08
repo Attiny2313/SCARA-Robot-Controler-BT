@@ -51,7 +51,9 @@ The physical E-STOP remains authoritative.
 - **X**: relay.
 - **START**: JOINT / TOOL in MANUAL; start / pause / resume in AUTO.
 - **MODE**: MANUAL / AUTO.
-- **TEACH**: short press saves a point; hold at least 1.8 s to clear the program.
+- **TEACH / Zapisz punkt**: sends a dedicated save command to the ESP32.
+- **KASUJ PROGRAM**: asks for confirmation and sends a dedicated clear command.
+- The physical PCB TEACH button still keeps its original behavior: short press saves, hold at least 1.8 s clears.
 - **HOME Z A+B**: confirms startup Z HOME when Z is stopped.
 - AUTO D-pad: up/down changes speed, left restores 100%.
 
@@ -74,6 +76,8 @@ The desktop app sends:
 ```text
 PCHELLO
 PCPAD,LX,LY,RX,RY,BUTTONS,DPAD
+PCTEACH
+PCCLEAR
 PCBYE
 ```
 
