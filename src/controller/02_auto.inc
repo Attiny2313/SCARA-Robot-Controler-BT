@@ -69,7 +69,19 @@ void loadProgram() {
 }
 
 void clearProgram() {
-    if (robot.operatingMode != OperatingMode::MANUAL || axesRunning()) return;
+    if (robot.estopLatched) {
+        Serial.println("TEACH CLEAR: zablokowane przez E-STOP");
+        return;
+    }
+    if (robot.operatingMode != OperatingMode::MANUAL) {
+        Serial.println("TEACH CLEAR: przejdz do MANUAL");
+        return;
+    }
+    if (axesRunning()) {
+        Serial.println("TEACH CLEAR: zatrzymaj osie przed kasowaniem programu");
+        return;
+    }
+
     programPointCount = 0;
     currentProgramPoint = 0;
     saveProgram();
@@ -84,7 +96,14 @@ void clearProgram() {
 // EN: A point can only be taught in MANUAL and after all axes have stopped.
 // UA: Точку можна записати лише в режимі MANUAL і після повної зупинки всіх осей.
 void teachCurrentPoint() {
-    if (robot.estopLatched || robot.operatingMode != OperatingMode::MANUAL) return;
+    if (robot.estopLatched) {
+        Serial.println("TEACH: zablokowane przez E-STOP");
+        return;
+    }
+    if (robot.operatingMode != OperatingMode::MANUAL) {
+        Serial.println("TEACH: przejdz do MANUAL");
+        return;
+    }
     if (axesRunning()) {
         Serial.println("TEACH: zatrzymaj osie przed zapisaniem punktu");
         return;
