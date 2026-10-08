@@ -176,6 +176,77 @@ void beginSerialControlSession() {
     Serial.println("PCACK,HELLO,1");
 }
 
+void handleSerialTeachCommand() {
+    if (!serialControlSessionActive) {
+        Serial.println("PCACK,TEACH,NEED_HELLO");
+        return;
+    }
+    if (!serialControlArmed) {
+        Serial.println("PCACK,TEACH,NOT_ARMED");
+        return;
+    }
+    if (startupZHomeRequired) {
+        Serial.println("PCACK,TEACH,HOME_REQUIRED");
+        return;
+    }
+    if (robot.estopLatched) {
+        Serial.println("PCACK,TEACH,ESTOP");
+        return;
+    }
+    if (robot.operatingMode != OperatingMode::MANUAL) {
+        Serial.println("PCACK,TEACH,NEED_MANUAL");
+        return;
+    }
+    if (axesRunning()) {
+        Serial.println("PCACK,TEACH,AXES_RUNNING");
+        return;
+    }
+
+    const uint8_t before = programPointCount;
+    teachCurrentPoint();
+
+    if (programPointCount == static_cast<uint8_t>(before + 1)) {
+        Serial.printf("PCACK,TEACH,OK,%u\n", programPointCount);
+    } else {
+        Serial.println("PCACK,TEACH,FAILED");
+    }
+}
+
+void handleSerialClearCommand() {
+    if (!serialControlSessionActive) {
+        Serial.println("PCACK,CLEAR,NEED_HELLO");
+        return;
+    }
+    if (!serialControlArmed) {
+        Serial.println("PCACK,CLEAR,NOT_ARMED");
+        return;
+    }
+    if (startupZHomeRequired) {
+        Serial.println("PCACK,CLEAR,HOME_REQUIRED");
+        return;
+    }
+    if (robot.estopLatched) {
+        Serial.println("PCACK,CLEAR,ESTOP");
+        return;
+    }
+    if (robot.operatingMode != OperatingMode::MANUAL) {
+        Serial.println("PCACK,CLEAR,NEED_MANUAL");
+        return;
+    }
+    if (axesRunning()) {
+        Serial.println("PCACK,CLEAR,AXES_RUNNING");
+        return;
+    }
+
+    clearProgram();
+
+    if (programPointCount == 0) {
+        Serial.println("PCACK,CLEAR,OK");
+    } else {
+        Serial.println("PCACK,CLEAR,FAILED");
+    }
+}
+
 void parseSerialControlLine(const char* line) {
     if (strcmp(line, "PCHELLO") == 0) {
         beginSerialControlSession();
@@ -187,6 +258,16 @@ void parseSerialControlLine(const char* line) {
             releaseSerialControl("PC CONTROL: rozlaczono");
         }
         Serial.println("PCACK,BYE,1");
+        return;
+    }
+
+    if (strcmp(line, "PCTEACH") == 0) {
+        handleSerialTeachCommand();
+        return;
+    }
+
+    if (strcmp(line, "PCCLEAR") == 0) {
+        handleSerialClearCommand();
         return;
     }
 
