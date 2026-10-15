@@ -3,6 +3,7 @@
 // Gamepad START+A+B held 2 seconds during startup launches the sequence.
 // B pressed during motion aborts. Never auto-start after reset.
 // Verify motor signs, low driver current, unobstructed mechanism and physical stop positions.
+constexpr bool ARM_HOME_EXPERIMENT_ENABLED = false; // Disabled after observed repeated hard-stop impacts and unexpected ARM2 motion
 constexpr float PYBOT_STOP_ARM1_DEG = -121.0f;
 constexpr float PYBOT_STOP_ARM2_DEG =  146.0f;
 constexpr float ARM_HOME_SPEED_DEG_S = 16.0f; // faster approach, still below PyBot ARM1 (~33 deg/s)
@@ -33,6 +34,10 @@ bool armHomeBusy() {
            armHomePhase != ArmHomePhase::FAULT;
 }
 bool startExperimentalArmHome() {
+    if (!ARM_HOME_EXPERIMENT_ENABLED) {
+        Serial.println("ARM HOME disabled: unsafe hard-stop behavior observed. Use E-STOP if movement is unexpected.");
+        return false;
+    }
     if (armHomePhase != ArmHomePhase::IDLE || robot.estopLatched ||
         stepperArm1 == nullptr || stepperArm2 == nullptr || axesRunning())
         return false;
