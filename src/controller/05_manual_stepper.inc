@@ -382,8 +382,13 @@ void processToolMode(float axisX, float axisY, float axisZ,
 //     Тайм-аут hasData() використовується лише в MANUAL; відсутність нових пакетів
 //     не означає відключення контролера під час виконання автоматичної програми.
 void processGamepad(float deltaTimeSeconds) {
-    if (armHomeBusy() || armHomePhase == ArmHomePhase::FAULT) return;
     ControllerPtr controller = getActiveController();
+    if (armHomeBusy()) {
+        // B alone cancels homing; controller loss also aborts.
+        processArmHomeGamepadGesture(controller, 0, 0, 0, 0);
+        return;
+    }
+    if (armHomePhase == ArmHomePhase::FAULT) return;
 
     if (controller == nullptr) {
         // PL: Jeżeli pad zniknie podczas ustawiania HOME Z, zapamiętaj aktualne
@@ -449,14 +454,21 @@ void processGamepad(float deltaTimeSeconds) {
         return;
     }
 
+    processArmHomeGamepadGesture(controller, leftX, leftY, rightX, rightY);
+    if (armHomeBusy()) return;
+
     // PL: Po restarcie normalne sterowanie jest zablokowane do czasu ręcznego
     //     ustawienia Z. W tym etapie prawy analog Y porusza tylko osią Z,
     //     a A+B przy zatrzymanej osi ustala bieżącą pozycję jako Z=0.
     // EN: After restart, normal control stays locked until Z is manually homed.
     // UA: Після перезапуску звичайне керування заблоковане до ручного HOME осі Z.
     if (startupZHomeRequired) {
-        const bool confirmZHome = controller->a() && controller->b();
-        processStartupZHome(rightY, confirmZHome, deltaTimeSeconds);
+        // Prevent the homing combo from being interpreted as Z confirmation.
+        const bool confirmZHome = controller->a() && controller->b() &&
+                                  !controller->miscStart() &&
+                                  armHomePhase == ArmHomePhase::COMPLETE;
+        if (armHomePhase == ArmHomePhase::COMPLETE)
+            processStartupZHome(rightY, confirmZHome, deltaTimeSeconds);
         previousPadStart = padStart;
         previousPadX = padX;
         return;
