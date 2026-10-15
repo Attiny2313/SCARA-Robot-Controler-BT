@@ -5,7 +5,7 @@
 // Verify motor signs, low driver current, unobstructed mechanism and physical stop positions.
 // Experimental open-loop reference: the A4988 does not detect physical contact.
 // Do NOT introduce a second stop-overrun. Contact is assumed, never measured.
-constexpr bool ARM_HOME_EXPERIMENT_ENABLED = true;
+constexpr bool ARM_HOME_EXPERIMENT_ENABLED = false; // Paused: physical axis mapping/coupling must be verified
 constexpr float PYBOT_STOP_ARM1_DEG = -121.0f;
 constexpr float PYBOT_STOP_ARM2_DEG = 146.0f;
 constexpr float ARM_HOME_SPEED_DEG_S = 6.0f;
