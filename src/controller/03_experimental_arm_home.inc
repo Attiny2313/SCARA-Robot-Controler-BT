@@ -1,0 +1,121 @@
+// EXPERIMENTAL SENSORLESS ARM HOME / PyBot-inspired hard-stop indexing.
+// IMPORTANT: A4988 has no stall feedback; completion is NOT proof of physical referencing.
+// Serial command HOME ARMS starts the sequence. Never auto-start after reset.
+// Verify motor signs, low driver current, unobstructed mechanism and physical stop positions.
+constexpr float PYBOT_STOP_ARM1_DEG = -121.0f;
+constexpr float PYBOT_STOP_ARM2_DEG =  146.0f;
+constexpr float ARM_HOME_SPEED_DEG_S = 4.0f;
+constexpr float ARM_HOME_EXTRA_DEG = 6.0f;
+constexpr uint32_t ARM_HOME_PHASE_TIMEOUT_MS = 100000;
+enum class ArmHomePhase : uint8_t { IDLE, ARM1_SWEEP, ARM1_OVER, ARM1_CENTER,
+                                    ARM2_SWEEP, ARM2_OVER, ARM2_CENTER, COMPLETE, FAULT };
+ArmHomePhase armHomePhase = ArmHomePhase::IDLE;
+bool armHomeVerified = false;
+uint32_t armHomePhaseStartedMs = 0;
+void failArmHome(const char* reason) {
+    emergencyStopMotion();
+    armHomePhase = ArmHomePhase::FAULT;
+    armHomeVerified = false;
+    robot.gamepadArmed = false;
+    digitalWrite(PIN_LED_ERROR, HIGH);
+    Serial.printf("ARM HOME FAULT: %s; reset required. Reference NOT verified.\n", reason);
+}
+void setArmHomePhase(ArmHomePhase next) {
+    armHomePhase = next;
+    armHomePhaseStartedMs = millis();
+}
+bool armHomeBusy() {
+    return armHomePhase != ArmHomePhase::IDLE &&
+           armHomePhase != ArmHomePhase::COMPLETE &&
+           armHomePhase != ArmHomePhase::FAULT;
+}
+bool startExperimentalArmHome() {
+    if (armHomePhase != ArmHomePhase::IDLE || robot.estopLatched ||
+        stepperArm1 == nullptr || stepperArm2 == nullptr || axesRunning())
+        return false;
+    robot.gamepadArmed = false;
+    setRelayState(false);
+    stepperArm1->setSpeedInHz(stepHz(ARM_HOME_SPEED_DEG_S * STEPS_PER_DEG_ARM1));
+    stepperArm2->setSpeedInHz(stepHz(ARM_HOME_SPEED_DEG_S * STEPS_PER_DEG_ARM2));
+    stepperArm1->setAcceleration(500);
+    stepperArm2->setAcceleration(500);
+    // Travel is bounded from the assumed initial 0-degree position.
+    stepperArm1->moveTo(arm1DegreesToSteps(PYBOT_STOP_ARM1_DEG));
+    setArmHomePhase(ArmHomePhase::ARM1_SWEEP);
+    Serial.println("EXPERIMENTAL ARM HOME started; mechanical-stop detection is NOT available.");
+    return true;
+}
+void processExperimentalArmHome() {
+    if (armHomePhase == ArmHomePhase::IDLE ||
+        armHomePhase == ArmHomePhase::COMPLETE ||
+        armHomePhase == ArmHomePhase::FAULT) return;
+    if (robot.estopLatched) { failArmHome("E-STOP"); return; }
+    if (millis() - armHomePhaseStartedMs > ARM_HOME_PHASE_TIMEOUT_MS) {
+        failArmHome("phase timeout"); return;
+    }
+    switch (armHomePhase) {
+    case ArmHomePhase::ARM1_SWEEP:
+        if (!stepperArm1->isRunning()) {
+            stepperArm1->moveTo(arm1DegreesToSteps(PYBOT_STOP_ARM1_DEG - ARM_HOME_EXTRA_DEG));
+            setArmHomePhase(ArmHomePhase::ARM1_OVER);
+        }
+        break;
+    case ArmHomePhase::ARM1_OVER:
+        if (!stepperArm1->isRunning()) {
+            // Assumption only: the mechanical stop was reached; no sensor confirms it.
+            stepperArm1->setCurrentPosition(arm1DegreesToSteps(PYBOT_STOP_ARM1_DEG));
+            stepperArm1->moveTo(arm1DegreesToSteps(0.0f));
+            setArmHomePhase(ArmHomePhase::ARM1_CENTER);
+        }
+        break;
+    case ArmHomePhase::ARM1_CENTER:
+        if (!stepperArm1->isRunning()) {
+            // With ARM1 at zero, PyBot ARM2 absolute maximum is +146 degrees.
+            stepperArm2->moveTo(arm2DegreesToSteps(0.0f, PYBOT_STOP_ARM2_DEG));
+            setArmHomePhase(ArmHomePhase::ARM2_SWEEP);
+        }
+        break;
+    case ArmHomePhase::ARM2_SWEEP:
+        if (!stepperArm2->isRunning()) {
+            stepperArm2->moveTo(arm2DegreesToSteps(0.0f, PYBOT_STOP_ARM2_DEG + ARM_HOME_EXTRA_DEG));
+            setArmHomePhase(ArmHomePhase::ARM2_OVER);
+        }
+        break;
+    case ArmHomePhase::ARM2_OVER:
+        if (!stepperArm2->isRunning()) {
+            stepperArm2->setCurrentPosition(arm2DegreesToSteps(0.0f, PYBOT_STOP_ARM2_DEG));
+            stepperArm2->moveTo(arm2DegreesToSteps(0.0f, 0.0f));
+            setArmHomePhase(ArmHomePhase::ARM2_CENTER);
+        }
+        break;
+    case ArmHomePhase::ARM2_CENTER:
+        if (!stepperArm2->isRunning()) {
+            stepperArm1->setAcceleration(ARM1_ACCEL);
+            stepperArm2->setAcceleration(arm2CoupledAcceleration(ARM1_ACCEL, ARM2_ACCEL));
+            updateActualRobotPosition();
+            robot.joints = robot.actualJoints;
+            robot.tcp = robot.actualTcp;
+            armHomeVerified = true; // Algorithm completed, NOT encoder-verified!
+            setArmHomePhase(ArmHomePhase::COMPLETE);
+            Serial.println("ARM HOME sequence ended (open loop, NOT physically verified). Finish Z home.");
+        }
+        break;
+    default: break;
+    }
+}
+void pollExperimentalArmHomeSerial() {
+    static String line;
+    while (Serial.available()) {
+        char ch = (char)Serial.read();
+        if (ch == '\r') continue;
+        if (ch == '\n') {
+            line.trim();
+            if (line == "HOME ARMS") {
+                if (!startExperimentalArmHome()) Serial.println("ARM HOME refused: busy or E-STOP");
+            } else if (line == "HOME STOP") {
+                if (armHomeBusy()) failArmHome("operator abort");
+            }
+            line = "";
+        } else if (line.length() < 32) line += ch;
+    }
+}
