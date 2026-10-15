@@ -94,9 +94,9 @@ void setup() {
 
     Serial.println();
     Serial.println("SCARA Controller - DEV AUTO/TEACH");
-    Serial.println("HOME ARM1/ARM2: ustaw recznie 0 deg przed resetem LUB eksperymentalnie HOME ARMS (Serial).");
-    Serial.println("UWAGA: HOME ARMS jest otwartopetlowe i moze uszkodzic mechanike; nie wykrywa oporu.");
-    Serial.println("HOME Z po restarcie: prawy analog Y = ruch Z, A+B = potwierdz Z=0.");
+    Serial.println("HOME ARM1/ARM2: START+A+B przez 2 s; B anuluje w czasie jazdy.");
+    Serial.println("UWAGA: HOME otwartopetlowe, bez wykrycia oporu; nie uruchamiaj bez nadzoru.");
+    Serial.println("Po HOME ARM: prawy analog Y = ruch Z, A+B = potwierdz Z=0.");
     Serial.println("Do potwierdzenia Z normalne MANUAL/AUTO oraz przyciski panelu sa zablokowane.");
     Serial.println("MANUAL: START = JOINT/TOOL");
     Serial.println("MANUAL: X = przelacz RELAY na GPIO5");
@@ -122,10 +122,8 @@ void loop() {
     // EN: Bluepad32 should be serviced as frequently as possible.
     // UA: Bluepad32 потрібно обслуговувати якомога частіше.
     BP32.update();
-    pollExperimentalArmHomeSerial();
-    processExperimentalArmHome();
-
     updateEmergencyStop();
+    processExperimentalArmHome();
 
     // PL: Podczas startowego ustawiania HOME Z blokujemy MODE i TEACH na PCB,
     //     ale nadal synchronizujemy ich stan, aby wciśnięcie podczas homingu
