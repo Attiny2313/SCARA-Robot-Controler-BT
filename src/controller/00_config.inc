@@ -169,10 +169,10 @@ constexpr float HOME_GRIP_DEG        = 50.0f;
 // PL: Ograniczenia chronią mechanikę w trybach MANUAL, TOOL i AUTO.
 // EN: These limits protect the mechanism in MANUAL, TOOL and AUTO modes.
 // UA: Ці обмеження захищають механіку в режимах MANUAL, TOOL і AUTO.
-constexpr float ARM1_MIN_DEG = -105.0f;
-constexpr float ARM1_MAX_DEG =  105.0f;
-constexpr float ARM2_MIN_DEG = -125.0f;
-constexpr float ARM2_MAX_DEG =  125.0f;
+constexpr float ARM1_MIN_DEG = -120.0f; // PyBot nominal operating range
+constexpr float ARM1_MAX_DEG =  120.0f; // verify on this robot
+constexpr float ARM2_MIN_DEG = -140.0f; // PyBot nominal operating range
+constexpr float ARM2_MAX_DEG =  140.0f; // verify on this robot
 constexpr float Z_MIN_MM = 0.0f;
 constexpr float Z_MAX_MM = 300.0f;
 constexpr float TOOL_ROTATE_MIN_DEG = 0.0f;
