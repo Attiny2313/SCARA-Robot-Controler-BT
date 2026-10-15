@@ -5,7 +5,7 @@
 // Verify motor signs, low driver current, unobstructed mechanism and physical stop positions.
 constexpr float PYBOT_STOP_ARM1_DEG = -121.0f;
 constexpr float PYBOT_STOP_ARM2_DEG =  146.0f;
-constexpr float ARM_HOME_SPEED_DEG_S = 4.0f;
+constexpr float ARM_HOME_SPEED_DEG_S = 16.0f; // faster approach, still below PyBot ARM1 (~33 deg/s)
 constexpr float ARM_HOME_EXTRA_DEG = 6.0f;
 constexpr uint32_t ARM_HOME_PHASE_TIMEOUT_MS = 100000;
 enum class ArmHomePhase : uint8_t { IDLE, ARM1_SWEEP, ARM1_OVER, ARM1_CENTER,
