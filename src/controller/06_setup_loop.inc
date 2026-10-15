@@ -94,7 +94,8 @@ void setup() {
 
     Serial.println();
     Serial.println("SCARA Controller - DEV AUTO/TEACH");
-    Serial.println("HOME ARM1/ARM2: ustaw recznie 0 deg przed zasileniem/resetem.");
+    Serial.println("HOME ARM1/ARM2: ustaw recznie 0 deg przed resetem LUB eksperymentalnie HOME ARMS (Serial).");
+    Serial.println("UWAGA: HOME ARMS jest otwartopetlowe i moze uszkodzic mechanike; nie wykrywa oporu.");
     Serial.println("HOME Z po restarcie: prawy analog Y = ruch Z, A+B = potwierdz Z=0.");
     Serial.println("Do potwierdzenia Z normalne MANUAL/AUTO oraz przyciski panelu sa zablokowane.");
     Serial.println("MANUAL: START = JOINT/TOOL");
@@ -121,6 +122,8 @@ void loop() {
     // EN: Bluepad32 should be serviced as frequently as possible.
     // UA: Bluepad32 потрібно обслуговувати якомога частіше.
     BP32.update();
+    pollExperimentalArmHomeSerial();
+    processExperimentalArmHome();
 
     updateEmergencyStop();
 
@@ -131,7 +134,7 @@ void loop() {
     //     current levels are still tracked to avoid a delayed button edge.
     // UA: Дії MODE і TEACH заблоковані під час HOME Z, але їх поточний стан
     //     відстежується, щоб після підтвердження не виник хибний фронт.
-    if (!startupZHomeRequired) {
+    if (!startupZHomeRequired && !armHomeBusy() && armHomePhase != ArmHomePhase::FAULT) {
         updatePanelButtons();
     } else {
         previousModeButton = digitalRead(PIN_BUTTON_MODE);
