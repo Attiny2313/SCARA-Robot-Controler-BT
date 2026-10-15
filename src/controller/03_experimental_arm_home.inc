@@ -1,6 +1,7 @@
 // EXPERIMENTAL SENSORLESS ARM HOME / PyBot-inspired hard-stop indexing.
 // IMPORTANT: A4988 has no stall feedback; completion is NOT proof of physical referencing.
-// Serial command HOME ARMS starts the sequence. Never auto-start after reset.
+// Gamepad START+A+B held 2 seconds during startup launches the sequence.
+// B pressed during motion aborts. Never auto-start after reset.
 // Verify motor signs, low driver current, unobstructed mechanism and physical stop positions.
 constexpr float PYBOT_STOP_ARM1_DEG = -121.0f;
 constexpr float PYBOT_STOP_ARM2_DEG =  146.0f;
@@ -12,6 +13,8 @@ enum class ArmHomePhase : uint8_t { IDLE, ARM1_SWEEP, ARM1_OVER, ARM1_CENTER,
 ArmHomePhase armHomePhase = ArmHomePhase::IDLE;
 bool armHomeVerified = false;
 uint32_t armHomePhaseStartedMs = 0;
+uint32_t armHomeComboSinceMs = 0;
+constexpr uint32_t ARM_HOME_COMBO_HOLD_MS = 2000;
 void failArmHome(const char* reason) {
     emergencyStopMotion();
     armHomePhase = ArmHomePhase::FAULT;
@@ -108,19 +111,32 @@ void processExperimentalArmHome() {
     default: break;
     }
 }
-void pollExperimentalArmHomeSerial() {
-    static String line;
-    while (Serial.available()) {
-        char ch = (char)Serial.read();
-        if (ch == '\r') continue;
-        if (ch == '\n') {
-            line.trim();
-            if (line == "HOME ARMS") {
-                if (!startExperimentalArmHome()) Serial.println("ARM HOME refused: busy or E-STOP");
-            } else if (line == "HOME STOP") {
-                if (armHomeBusy()) failArmHome("operator abort");
-            }
-            line = "";
-        } else if (line.length() < 32) line += ch;
+// Startup-only gamepad gesture: START+A+B held for 2 seconds.
+void processArmHomeGamepadGesture(ControllerPtr controller, float lx, float ly,
+                                  float rx, float ry) {
+    if (controller == nullptr || !controller->isConnected()) {
+        armHomeComboSinceMs = 0;
+        if (armHomeBusy()) failArmHome("gamepad disconnected");
+        return;
+    }
+    if (armHomeBusy()) {
+        if (controller->b() && !controller->a()) failArmHome("gamepad abort B");
+        return;
+    }
+    if (armHomePhase != ArmHomePhase::IDLE || !startupZHomeRequired ||
+        !robot.gamepadArmed) {
+        armHomeComboSinceMs = 0;
+        return;
+    }
+    bool pressed = controller->miscStart() && controller->a() && controller->b() &&
+                   lx == 0.0f && ly == 0.0f && rx == 0.0f && ry == 0.0f;
+    if (!pressed) {
+        armHomeComboSinceMs = 0;
+        return;
+    }
+    if (armHomeComboSinceMs == 0) armHomeComboSinceMs = millis();
+    if (millis() - armHomeComboSinceMs >= ARM_HOME_COMBO_HOLD_MS) {
+        armHomeComboSinceMs = 0;
+        if (startExperimentalArmHome()) Serial.println("ARM HOME started by gamepad");
     }
 }
