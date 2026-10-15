@@ -41,6 +41,9 @@ bool startExperimentalArmHome() {
     stepperArm2->setAcceleration(500);
     // Travel is bounded from the assumed initial 0-degree position.
     stepperArm1->moveTo(arm1DegreesToSteps(PYBOT_STOP_ARM1_DEG));
+    // PyBot moves ARM2 toward +90 joint degrees during the ARM1 stop sweep.
+    // This command includes the 33/62 mechanical coupling compensation.
+    stepperArm2->moveTo(arm2DegreesToSteps(PYBOT_STOP_ARM1_DEG, 90.0f));
     setArmHomePhase(ArmHomePhase::ARM1_SWEEP);
     Serial.println("EXPERIMENTAL ARM HOME started; mechanical-stop detection is NOT available.");
     return true;
@@ -55,21 +58,23 @@ void processExperimentalArmHome() {
     }
     switch (armHomePhase) {
     case ArmHomePhase::ARM1_SWEEP:
-        if (!stepperArm1->isRunning()) {
+        if (!stepperArm1->isRunning() && !stepperArm2->isRunning()) {
             stepperArm1->moveTo(arm1DegreesToSteps(PYBOT_STOP_ARM1_DEG - ARM_HOME_EXTRA_DEG));
+            stepperArm2->moveTo(arm2DegreesToSteps(PYBOT_STOP_ARM1_DEG - ARM_HOME_EXTRA_DEG, 90.0f));
             setArmHomePhase(ArmHomePhase::ARM1_OVER);
         }
         break;
     case ArmHomePhase::ARM1_OVER:
-        if (!stepperArm1->isRunning()) {
+        if (!stepperArm1->isRunning() && !stepperArm2->isRunning()) {
             // Assumption only: the mechanical stop was reached; no sensor confirms it.
             stepperArm1->setCurrentPosition(arm1DegreesToSteps(PYBOT_STOP_ARM1_DEG));
             stepperArm1->moveTo(arm1DegreesToSteps(0.0f));
+            stepperArm2->moveTo(arm2DegreesToSteps(0.0f, 0.0f));
             setArmHomePhase(ArmHomePhase::ARM1_CENTER);
         }
         break;
     case ArmHomePhase::ARM1_CENTER:
-        if (!stepperArm1->isRunning()) {
+        if (!stepperArm1->isRunning() && !stepperArm2->isRunning()) {
             // With ARM1 at zero, PyBot ARM2 absolute maximum is +146 degrees.
             stepperArm2->moveTo(arm2DegreesToSteps(0.0f, PYBOT_STOP_ARM2_DEG));
             setArmHomePhase(ArmHomePhase::ARM2_SWEEP);
@@ -95,7 +100,7 @@ void processExperimentalArmHome() {
             updateActualRobotPosition();
             robot.joints = robot.actualJoints;
             robot.tcp = robot.actualTcp;
-            armHomeVerified = true; // Algorithm completed, NOT encoder-verified!
+            armHomeVerified = true; // Sequence completed; no hardware verification of the physical reference.
             setArmHomePhase(ArmHomePhase::COMPLETE);
             Serial.println("ARM HOME sequence ended (open loop, NOT physically verified). Finish Z home.");
         }
