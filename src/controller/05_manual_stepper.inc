@@ -382,6 +382,7 @@ void processToolMode(float axisX, float axisY, float axisZ,
 //     Тайм-аут hasData() використовується лише в MANUAL; відсутність нових пакетів
 //     не означає відключення контролера під час виконання автоматичної програми.
 void processGamepad(float deltaTimeSeconds) {
+    if (armHomeBusy() || armHomePhase == ArmHomePhase::FAULT) return;
     ControllerPtr controller = getActiveController();
 
     if (controller == nullptr) {
